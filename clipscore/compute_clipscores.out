@@ -1,0 +1,79 @@
+JobId=10892092 JobName=compute_clipscores.sbatch
+   UserId=smukherjee3(648097) GroupId=domain users(100513) MCS_label=N/A
+   Priority=22842809 Nice=0 Account=ewi-insy-prb-visionlab QOS=short
+   JobState=RUNNING Reason=None Dependency=(null)
+   Requeue=0 Restarts=0 BatchFlag=1 Reboot=0 ExitCode=0:0
+   DerivedExitCode=0:0
+   RunTime=00:00:00 TimeLimit=04:00:00 TimeMin=N/A
+   SubmitTime=2024-09-20T18:00:40 EligibleTime=2024-09-20T18:00:40
+   AccrueTime=2024-09-20T18:00:40
+   StartTime=2024-09-20T18:01:17 EndTime=2024-09-20T22:01:17 Deadline=N/A
+   SuspendTime=None SecsPreSuspend=0 LastSchedEval=2024-09-20T18:01:17 Scheduler=Main
+   Partition=general AllocNode:Sid=login3:57543
+   ReqNodeList=(null) ExcNodeList=(null)
+   NodeList=gpu11
+   BatchHost=gpu11
+   NumNodes=1 NumCPUs=4 NumTasks=1 CPUs/Task=4 ReqB:S:C:T=0:0:*:*
+   TRES=cpu=4,mem=20000M,node=1,billing=19,gres/gpu=1
+   Socks/Node=* NtasksPerN:B:S:C=0:0:*:* CoreSpec=*
+   JOB_GRES=gpu:a40:1
+     Nodes=gpu11 CPU_IDs=4-5,8-9 Mem=20000 GRES=gpu:a40:1(IDX:2)
+   MinCPUsNode=4 MinMemoryNode=20000M MinTmpDiskNode=0
+   Features=(null) DelayBoot=00:00:00
+   OverSubscribe=OK Contiguous=0 Licenses=(null) Network=(null)
+   Command=/tudelft.net/staff-bulk/ewi/insy/VisionLab/smukherjee/PhD_GuidedDiff/clipscore/compute_clipscores.sbatch
+   WorkDir=/tudelft.net/staff-bulk/ewi/insy/VisionLab/smukherjee/PhD_GuidedDiff/clipscore
+   StdErr=/tudelft.net/staff-bulk/ewi/insy/VisionLab/smukherjee/PhD_GuidedDiff/clipscore/compute_clipscores.out
+   StdIn=/dev/null
+   StdOut=/tudelft.net/staff-bulk/ewi/insy/VisionLab/smukherjee/PhD_GuidedDiff/clipscore/compute_clipscores.out
+   Power=
+   TresPerNode=gres:gpu:a40:1
+   
+
+----------------- Environment ------------------
+--------------- Running the code ---------------
+This run started on: Fri Sep 20 18:01:18 CEST 2024
+1
+Fri Sep 20 18:01:20 2024       
++-----------------------------------------------------------------------------------------+
+| NVIDIA-SMI 550.90.07              Driver Version: 550.90.07      CUDA Version: 12.4     |
+|-----------------------------------------+------------------------+----------------------+
+| GPU  Name                 Persistence-M | Bus-Id          Disp.A | Volatile Uncorr. ECC |
+| Fan  Temp   Perf          Pwr:Usage/Cap |           Memory-Usage | GPU-Util  Compute M. |
+|                                         |                        |               MIG M. |
+|=========================================+========================+======================|
+|   0  NVIDIA A40                     On  |   00000000:E2:00.0 Off |                    0 |
+|  0%   31C    P8             20W /  300W |       1MiB /  46068MiB |      0%      Default |
+|                                         |                        |                  N/A |
++-----------------------------------------+------------------------+----------------------+
+                                                                                         
++-----------------------------------------------------------------------------------------+
+| Processes:                                                                              |
+|  GPU   GI   CI        PID   Type   Process name                              GPU Memory |
+|        ID   ID                                                               Usage      |
+|=========================================================================================|
+|  No running processes found                                                             |
++-----------------------------------------------------------------------------------------+
+  0%|          | 0/1 [00:00<?, ?it/s]100%|██████████| 1/1 [00:08<00:00,  8.74s/it]100%|██████████| 1/1 [00:08<00:00,  8.76s/it]
+  0%|          | 0/1 [00:00<?, ?it/s]100%|██████████| 1/1 [00:00<00:00,  1.78it/s]100%|██████████| 1/1 [00:00<00:00,  1.75it/s]
+clipscore.py:153: UserWarning: due to a numerical instability, new numpy normalization is slightly different than paper results. to exactly replicate paper results, please use numpy version less than 1.21, e.g., 1.20.3.
+  warnings.warn(
+  0%|          | 0/1 [00:00<?, ?it/s]100%|██████████| 1/1 [00:06<00:00,  6.82s/it]100%|██████████| 1/1 [00:06<00:00,  6.84s/it]
+  0%|          | 0/1 [00:00<?, ?it/s]100%|██████████| 1/1 [00:00<00:00,  2.24it/s]100%|██████████| 1/1 [00:00<00:00,  2.18it/s]
+clipscore.py:153: UserWarning: due to a numerical instability, new numpy normalization is slightly different than paper results. to exactly replicate paper results, please use numpy version less than 1.21, e.g., 1.20.3.
+  warnings.warn(
+Traceback (most recent call last):
+  File "clipscore.py", line 273, in <module>
+    main()
+  File "clipscore.py", line 215, in main
+    candidates = [candidates[cid] for cid in image_ids]
+  File "clipscore.py", line 215, in <listcomp>
+    candidates = [candidates[cid] for cid in image_ids]
+KeyError: '21'
+Traceback (most recent call last):
+  File "compute_scores.py", line 134, in <module>
+    compute_clipscore()
+  File "compute_scores.py", line 61, in compute_clipscore
+    clip_scores.append(float(score.split(': ')[1]))
+IndexError: list index out of range
+This run completed on: Fri Sep 20 18:02:40 CEST 2024
