@@ -29,6 +29,7 @@ from pipelines import (
     GradSDPipelineI2I,
     CoDeSDPipeline,
     CoDeSDPipelineI2I,
+    GradCoDeSDPipelineI2I,
     prepare_image, 
     encode
 )
@@ -37,7 +38,9 @@ from scorers import (
     HPSScorer, 
     FaceRecognitionScorer, 
     ClipScorer,
-    CompressibilityScorer
+    CompressibilityScorer,
+    ImageRewardScorer,
+    PickScoreScorer
 )
 
 from typing import Optional
@@ -45,14 +48,14 @@ from argparse import ArgumentParser, Namespace
 from diffusers import DDIMScheduler, DDPMScheduler
 from diffusers.utils.torch_utils import randn_tensor
 
-currhost = os.uname()[1]
-if (currhost != 'tud1006406') and ("housky" not in currhost):  # TUD cluster
+os.environ['TRANSFORMERS_CACHE'] = '/tudelft.net/staff-umbrella/StudentsCVlab/mgoyal'
+os.environ['HF_HOME'] = '/tudelft.net/staff-umbrella/StudentsCVlab/mgoyal'
+os.environ['TORCH_HOME'] = '/tudelft.net/staff-umbrella/StudentsCVlab/mgoyal'
+# currhost = os.uname()[1]
+# if (currhost != 'tud1006406') and ("housky" not in currhost):  # TUD cluster
     # os.environ['TRANSFORMERS_CACHE'] = '/tudelft.net/staff-bulk/ewi/insy/VisionLab/smukherjee'
     # os.environ['HF_HOME'] = '/tudelft.net/staff-bulk/ewi/insy/VisionLab/smukherjee'
     # os.environ['TORCH_HOME'] = '/tudelft.net/staff-bulk/ewi/insy/VisionLab/smukherjee'
-    os.environ['TRANSFORMERS_CACHE'] = '/tudelft.net/staff-umbrella/StudentsCVlab/mgoyal'
-    os.environ['HF_HOME'] = '/tudelft.net/staff-umbrella/StudentsCVlab/mgoyal'
-    os.environ['TORCH_HOME'] = '/tudelft.net/staff-umbrella/StudentsCVlab/mgoyal'
 
 logger = logging.getLogger("guided-diff")
 
@@ -117,7 +120,10 @@ def run_experiment(config):
             model_id, torch_dtype=torch.float16).to(device)
     elif config.guidance.method == "code" or config.guidance.method == "code_b1":
         pipe = CoDeSDPipeline.from_pretrained(
-            model_id, torch_dtype=torch.float16).to(device)        
+            model_id, torch_dtype=torch.float16).to(device)    
+    elif config.guidance.method == "c_grad_code"    :
+        pipe = GradCoDeSDPipelineI2I.from_pretrained(
+            model_id, torch_dtype=torch.float16).to(device)
     else:
         raise NotImplementedError(f'{config.guidance.method} pipeline not found!')
 
@@ -144,6 +150,10 @@ def run_experiment(config):
         scorer = FaceRecognitionScorer()
     elif config.guidance.scorer in ["styletransfer", "strokegen"]:
         scorer = ClipScorer()
+    elif config.guidance.scorer == 'imagereward':
+        scorer = ImageRewardScorer(device=device)
+    elif config.guidance.scorer == 'pickscorer':
+        scorer = PickScoreScorer()
     else:
         scorer = HPSScorer()
 
@@ -222,7 +232,8 @@ def run_experiment(config):
     
 
     if isinstance(pipe, CoDeSDPipelineI2I) or isinstance(pipe, SDPipelineI2I)\
-        or isinstance(pipe, BoNSDPipelineI2I) or isinstance(pipe, GradSDPipelineI2I):
+        or isinstance(pipe, BoNSDPipelineI2I) or isinstance(pipe, GradSDPipelineI2I)\
+        or isinstance(pipe, GradCoDeSDPipelineI2I):
 
         # if config.input_image:
         # if (isinstance(scorer, FaceRecognitionScorer) or isinstance(scorer, ClipScorer)) or isinstance(scorer, CompressibilityScorer):

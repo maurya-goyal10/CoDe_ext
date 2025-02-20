@@ -29,7 +29,8 @@ logging.set_verbosity_error()
 
 from pathlib import Path
 
-ASSETS_PATH = Path("/home/sayak/Projects/PhD_GuidedDiff/BoN/assets")
+# ASSETS_PATH = Path("/home/sayak/Projects/PhD_GuidedDiff/BoN/assets")
+ASSETS_PATH = Path("/tudelft.net/staff-umbrella/StudentsCVlab/mgoyal/CoDe_ext/BoN/assets")
 
 # load safety model
 safety_model_id = "CompVis/stable-diffusion-safety-checker"
@@ -311,32 +312,45 @@ def main():
 
                     offset = 0
                     savepath = Path(sample_path).joinpath(f'og_img_{n}').joinpath("images").joinpath(prompt)
-                    if Path.exists(savepath):
-
+                    
+                    # if the path already exists
+                    if Path.exists(savepath):    
                         images = [x for x in savepath.iterdir() if x.suffix == '.png']
                         num_gen_images = len(images)
+                      
+                        # if enough images already exist                        
                         if num_gen_images >= num_images_per_prompt:
                             print(f'Images found. Skipping prompt.')
+                            num_images_per_prompt = 0
                             continue
 
+                        # if some images exist in the directory
                         elif num_gen_images < num_images_per_prompt:
                             offset = num_gen_images
                             num_images_per_prompt -= num_gen_images
                             print(f'Found {num_gen_images} images. Generating {num_images_per_prompt} more.')
 
+                    # Check if the image dir exists
                     if not Path.exists(savepath):
                         Path.mkdir(savepath, exist_ok=True, parents=True)
 
                     for j in range(num_images_per_prompt):
-
+                        
                         style_ref_img_path = os.path.join(opt.style_ref_path, filename)
                         image_encoder.calc_ref_feat(style_ref_img_path)
                         prompts = batch_size * [prompt]
+                        
+                        # uc contains the unconditional 
                         uc = None
-                        if opt.scale != 1.0:
+                        # if guidance scale is not one give null prompts for the unconditional
+                        if opt.scale != 1.0:    
                             uc = model.get_learned_conditioning(batch_size * [""])
+                        
+                        # make the prompts a list    
                         if isinstance(prompts, tuple):
                             prompts = list(prompts)
+                        
+                        # c contains the learned conditioning with the actual prompts   
                         c = model.get_learned_conditioning(prompts)
                         shape = [opt.C, opt.H // opt.f, opt.W // opt.f]
                         samples_ddim, intermediates = sampler.sample(S=opt.ddim_steps,

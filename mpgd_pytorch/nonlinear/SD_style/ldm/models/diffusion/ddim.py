@@ -181,6 +181,7 @@ class DDIMSampler(object):
 
             count1 += 1
             pred_x0_temp = self.model.decode_first_stage(pred_x0)
+            # just changing from [-1,1] tp [0,1]
             pred_x0_temp = torch.clamp((pred_x0_temp + 1.0) / 2.0, min=0.0, max=1.0)
             pred_x0_temp = pred_x0_temp.cpu().permute(0, 2, 3, 1).detach().numpy()
             pred_x0_torch = torch.from_numpy(pred_x0_temp).permute(0, 3, 1, 2)
@@ -257,9 +258,13 @@ class DDIMSampler(object):
                 pred_x0 = pred_x0.detach().requires_grad_(True)
             
                 if start > index >= end:
+                    # get the pixel space using the first stage decoder of the model
                     D_x0_t = self.model.decode_first_stage(pred_x0)
+                    # measures the similarity between the reference image (self.ref) and the D_x0_t
                     residual = self.image_encoder.get_gram_matrix_residual(D_x0_t)
+                    # norm measures how clise they are 
                     norm = torch.linalg.norm(residual)
+                    # this is the \nabla_{x_0} norm, thus measures where to move inorder to reduce the norm (loss),
                     norm_grad = torch.autograd.grad(outputs=norm, inputs=pred_x0)[0]
                     # in the implementatino for our paper we do have the "/ a_prev.sqrt()" part included, but we also found that in practice without it also lead to good results
                     # with and without "/ a_prev.sqrt()" may require different rho, but usually picking something between 15 to 30 is ok

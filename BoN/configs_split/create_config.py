@@ -5,16 +5,18 @@ import numpy as np
 from pathlib import Path
 from omegaconf import OmegaConf
 
-_METHODS = ['c_code','uncond'] # ['c_bon', 'i2i'] # 'ibon', ibon_i2i', 'bon', 'uncond', 'i2i', 'bon_i2i', 'code', 'c_code'
+_METHODS = ['code'] # ['c_bon', 'i2i'] # 'ibon', ibon_i2i', 'bon', 'uncond', 'i2i', 'bon_i2i', 'code', 'c_code'
 
 _SCORERS = {
     # 'aesthetic': '../assets/eval_simple_animals.txt', 
     # 'hpsv2': '../assets/hps_v2_all_eval.txt', 
     # 'facedetector': '../assets/face.txt', 
-    'styletransfer': '../assets/style.txt',
+    # 'styletransfer': '../assets/style.txt',
     # 'strokegen': '../assets/stroke.txt',
-    'compress': '../assets/compressibility.txt',
-    }
+    # 'compress': '../assets/compressibility.txt',
+    'imagereward': '../assets/hps_v2_all_eval.txt', 
+    'pickscore': '../assets/hps_v2_all_eval.txt'
+}
 
 def create_function():
 
@@ -32,8 +34,8 @@ def create_function():
 
         for scorer in _SCORERS.keys():
 
-            num_prompts = 3 if scorer == 'facedetector' else 4
-            num_targets = 3 # if scorer == 'strokegen' else 3
+            num_prompts = 1 #if scorer == 'facedetector' else 4
+            num_targets = 1 # if scorer == 'strokegen' else 3
 
             print(f'{method} {scorer}')
 
@@ -166,6 +168,8 @@ def create_function():
                                 curr_config.guidance.num_samples = num_samples
                                 curr_config.guidance.block_size = block_size
                                 curr_config.guidance.prompt_idxs = [prompt_idx]
+                                if "target_idxs" in curr_config.guidance:
+                                    del curr_config.guidance["target_idxs"]
 
                                 filename = f'{method}{num_samples}_p{prompt_idx}_b{block_size}_{scorer}'
                                 savepath = curr_path.joinpath(f'{filename}.yaml')
@@ -300,7 +304,7 @@ def create_function():
                 num_prompts = 3 if scorer == 'facedetector' else 4
                 num_targets = 3
 
-                for num_samples in [10, 20, 30 , 40]: # [10, 20, 30, 40]:
+                for num_samples in [40]: # [10, 20, 30, 40]:
 
                     for block_size in [5]: # [5, 10, 20, 50, 100]
 

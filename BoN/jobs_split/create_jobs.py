@@ -50,8 +50,8 @@ def main():
 
     for method in methods:
 
-        # if method.stem not in ['c_code_b1']:
-        #     continue
+        if method.stem not in ['code']:
+            continue
 
         curr_path = Path(method.stem)
         # print(curr_path)

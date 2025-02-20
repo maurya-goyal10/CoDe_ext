@@ -8,3 +8,4 @@ from .bon_pipe_img2img import BoNSDPipelineI2I
 from .gradient_img2img import GradSDPipelineI2I
 from .cd_pipe import CoDeSDPipeline
 from .cd_pipe_img2img import CoDeSDPipelineI2I
+from .gradient_cd_bon import GradCoDeSDPipelineI2I
