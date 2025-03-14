@@ -1,6 +1,7 @@
 import argparse, os, sys, glob
 import cv2
 import torch
+import json
 import numpy as np
 from omegaconf import OmegaConf
 from PIL import Image
@@ -18,6 +19,8 @@ from ldm.util import instantiate_from_config
 from ldm.models.diffusion.ddim import DDIMSampler
 from ldm.models.diffusion.plms import PLMSSampler
 from ldm.models.diffusion.dpm_solver import DPMSolverSampler
+
+from ldm.models.diffusion.aesthetic.aesthetic_scorer import AestheticScorer
 
 from diffusers.pipelines.stable_diffusion.safety_checker import StableDiffusionSafetyChecker
 from transformers import AutoFeatureExtractor
@@ -95,6 +98,25 @@ def check_safety(x_image):
             x_checked_image[i] = load_replacement(x_checked_image[i])
     return x_checked_image, has_nsfw_concept
 
+def load_score(file_path):
+    if os.path.exists(file_path):
+        with open(file_path, "r") as f:
+            return json.load(f)
+    return {}
+
+def save_score(file_path, score):
+    with open(file_path, "w") as f:
+        json.dump(score, f, indent=4)
+
+def update_score(file_path, prompt, new_score):
+    results = load_score(file_path)
+    if prompt not in results:
+        results[prompt] = []
+    elif not isinstance(results[prompt], list):
+        results[prompt] = [results[prompt]] 
+    results[prompt].append(new_score)
+    save_score(file_path, results)
+
 
 def main():
     parser = argparse.ArgumentParser()
@@ -102,7 +124,7 @@ def main():
     parser.add_argument(
         "--prompt",
         type=str,
-        nargs="?",
+        nargs="+",
         default="a painting of a virus monster playing guitar",
         help="the prompt to render"
     )
@@ -164,7 +186,7 @@ def main():
     parser.add_argument(
         "--n_iter",
         type=int,
-        default=2,
+        default=1,
         help="sample this often",
     )
     parser.add_argument(
@@ -194,8 +216,14 @@ def main():
     parser.add_argument(
         "--n_samples",
         type=int,
-        default=3,
+        default=1,
         help="how many samples to produce for each given prompt. A.k.a. batch size",
+    )
+    parser.add_argument(
+        "--rho",
+        type=float,
+        default=0.2,
+        help="guidance scale like"
     )
     parser.add_argument(
         "--n_rows",
@@ -223,13 +251,19 @@ def main():
     parser.add_argument(
         "--ckpt",
         type=str,
-        default="models/ldm/stable-diffusion-v1/model.ckpt",
+        default="/tudelft.net/staff-umbrella/StudentsCVlab/mgoyal/mpgd_pytorch/nonlinear/SD_style/models/ldm/stable-diffusion-v1/sd-v1-4.ckpt",
         help="path to checkpoint of model",
     )
+    # parser.add_argument(
+    #     "--from_file",
+    #     type=str,
+    #     default="/tudelft.net/staff-umbrella/StudentsCVlab/mgoyal/CoDe_ext/AlignProp/assets/eval_simple_animals.txt",
+    #     help="path to checkpoint of model",
+    # )
     parser.add_argument(
         "--seed",
         type=int,
-        default=42,
+        default=2024,
         help="the seed (for reproducible sampling)",
     )
     parser.add_argument(
@@ -283,9 +317,13 @@ def main():
     batch_size = opt.n_samples
     n_rows = opt.n_rows if opt.n_rows > 0 else batch_size
     if not opt.from_file:
-        prompt = opt.prompt
-        assert prompt is not None
-        data = [batch_size * [prompt]]
+        if isinstance(opt.prompt, list):
+            data = 1 * opt.prompt
+        else:
+            data = 1 * [opt.prompt]
+        # prompt = opt.prompt
+        # assert prompt is not None
+        # data = [batch_size * [prompt]]
 
     else:
         print(f"reading prompts from {opt.from_file}")
@@ -293,7 +331,7 @@ def main():
             data = f.read().splitlines()
             data = list(chunk(data, batch_size))
 
-    sample_path = os.path.join(outpath, f"test_style_{opt.scale}")
+    sample_path = os.path.join(outpath, f"aesthetic_outputs")
     os.makedirs(sample_path, exist_ok=True)
     base_count = len(os.listdir(sample_path))
     grid_count = len(os.listdir(outpath)) - 1
@@ -304,76 +342,151 @@ def main():
 
     precision_scope = autocast if opt.precision=="autocast" else nullcontext
     # with torch.no_grad():
+    print(data)
     with precision_scope("cuda"):
         with model.ema_scope():
 
             for idx, prompt in enumerate(data):
 
                 n = -1
-                for filename in tqdm(sorted(os.listdir(opt.style_ref_img_path))):
-                    if filename.lower().endswith(('.png', '.jpg', '.jpeg', '.tiff', '.bmp', '.gif')):
+                # for filename in tqdm(sorted(os.listdir(opt.style_ref_img_path))):
+                #     if filename.lower().endswith(('.png', '.jpg', '.jpeg', '.tiff', '.bmp', '.gif')):
 
-                        n += 1
-                        num_images_per_prompt = opt.n_iter
+                #         n += 1
+                #         num_images_per_prompt = opt.n_iter
 
-                        offset = 0
-                        savepath = Path(sample_path).joinpath(f'og_img_{n}').joinpath("images").joinpath(prompt[0])
-                        if Path.exists(savepath):
+                #         offset = 0
+                #         savepath = Path(sample_path).joinpath(f'og_img_{n}').joinpath("images").joinpath(prompt[0])
+                #         if Path.exists(savepath):
 
-                            images = [x for x in savepath.iterdir() if x.suffix == '.png']
-                            num_gen_images = len(images)
-                            if num_gen_images >= num_images_per_prompt:
-                                print(f'Images found. Skipping prompt.')
-                                continue
+                #             images = [x for x in savepath.iterdir() if x.suffix == '.png']
+                #             num_gen_images = len(images)
+                #             if num_gen_images >= num_images_per_prompt:
+                #                 print(f'Images found. Skipping prompt.')
+                #                 continue
 
-                            elif num_gen_images < num_images_per_prompt:
-                                offset = num_gen_images
-                                num_images_per_prompt -= num_gen_images
-                                print(f'Found {num_gen_images} images. Generating {num_images_per_prompt} more.')
+                #             elif num_gen_images < num_images_per_prompt:
+                #                 offset = num_gen_images
+                #                 num_images_per_prompt -= num_gen_images
+                #                 print(f'Found {num_gen_images} images. Generating {num_images_per_prompt} more.')
 
-                        if not Path.exists(savepath):
-                            Path.mkdir(savepath, exist_ok=True, parents=True)
+                #         if not Path.exists(savepath):
+                #             Path.mkdir(savepath, exist_ok=True, parents=True)
 
-                        target_img = Path(sample_path).joinpath(f'og_img_{n}').joinpath(f'og_img_{n}.png')
-                        if not Path.exists(target_img):
-                            img = Image.open(os.path.join(opt.style_ref_img_path, filename)).convert('RGB')
-                            img.save(target_img)
+                #         target_img = Path(sample_path).joinpath(f'og_img_{n}').joinpath(f'og_img_{n}.png')
+                #         if not Path.exists(target_img):
+                #             img = Image.open(os.path.join(opt.style_ref_img_path, filename)).convert('RGB')
+                #             img.save(target_img)
 
-                        for j in range(num_images_per_prompt):
-                            uc = None
-                            if opt.scale != 1.0:
-                                uc = model.get_learned_conditioning(batch_size * [""])
-                            if isinstance(prompt, tuple):
-                                prompt = list(prompt)
-                            c = model.get_learned_conditioning(prompt)
-                            shape = [opt.C, opt.H // opt.f, opt.W // opt.f]
-                            samples_ddim, intermediates = sampler.sample(S=opt.ddim_steps,
-                                                                conditioning=c,
-                                                                batch_size=opt.n_samples,
-                                                                shape=shape,
-                                                                verbose=False,
-                                                                unconditional_guidance_scale=opt.scale,
-                                                                unconditional_conditioning=uc,
-                                                                eta=opt.ddim_eta,
-                                                                x_T=start_code,
-                                                                style_ref_img_path=os.path.join(opt.style_ref_img_path, filename))
+                #         for j in range(num_images_per_prompt):
+                #             uc = None
+                #             if opt.scale != 1.0:
+                #                 uc = model.get_learned_conditioning(batch_size * [""])
+                #             if isinstance(prompt, tuple):
+                #                 prompt = list(prompt)
+                #             c = model.get_learned_conditioning(prompt)
+                #             shape = [opt.C, opt.H // opt.f, opt.W // opt.f]
+                #             samples_ddim, intermediates = sampler.sample(S=opt.ddim_steps,
+                #                                                 conditioning=c,
+                #                                                 batch_size=opt.n_samples,
+                #                                                 shape=shape,
+                #                                                 verbose=False,
+                #                                                 unconditional_guidance_scale=opt.scale,
+                #                                                 unconditional_conditioning=uc,
+                #                                                 eta=opt.ddim_eta,
+                #                                                 x_T=start_code,
+                #                                                 style_ref_img_path=os.path.join(opt.style_ref_img_path, filename))
 
-                            x_samples_ddim = model.decode_first_stage(samples_ddim)
-                            x_samples_ddim = torch.clamp((x_samples_ddim + 1.0) / 2.0, min=0.0, max=1.0)
-                            x_samples_ddim = x_samples_ddim.cpu().permute(0, 2, 3, 1).detach().numpy()
+                #             x_samples_ddim = model.decode_first_stage(samples_ddim)
+                #             x_samples_ddim = torch.clamp((x_samples_ddim + 1.0) / 2.0, min=0.0, max=1.0)
+                #             x_samples_ddim = x_samples_ddim.cpu().permute(0, 2, 3, 1).detach().numpy()
 
-                            # x_checked_image, has_nsfw_concept = check_safety(x_samples_ddim)
-                            x_checked_image = x_samples_ddim
+                #             # x_checked_image, has_nsfw_concept = check_safety(x_samples_ddim)
+                #             x_checked_image = x_samples_ddim
 
-                            x_checked_image_torch = torch.from_numpy(x_checked_image).permute(0, 3, 1, 2)
+                #             x_checked_image_torch = torch.from_numpy(x_checked_image).permute(0, 3, 1, 2)
 
-                            if not opt.skip_save:
-                                for x_sample in x_checked_image_torch:
-                                    x_sample = 255. * rearrange(x_sample.cpu().numpy(), 'c h w -> h w c')
-                                    img = Image.fromarray(x_sample.astype(np.uint8))
-                                    # img = put_watermark(img, wm_encoder)
-                                    img.save(os.path.join(savepath, f'{j + offset}.png'))
-                                    # base_count += 1
+                #             if not opt.skip_save:
+                #                 for x_sample in x_checked_image_torch:
+                #                     x_sample = 255. * rearrange(x_sample.cpu().numpy(), 'c h w -> h w c')
+                #                     img = Image.fromarray(x_sample.astype(np.uint8))
+                #                     # img = put_watermark(img, wm_encoder)
+                #                     img.save(os.path.join(savepath, f'{j + offset}.png'))
+                #                     # base_count += 1
+
+
+                n += 1
+                num_images_per_prompt = opt.n_iter
+
+                offset = 0
+                savepath = Path(sample_path).joinpath("images").joinpath(f"{prompt}_rho{opt.rho}")
+                # if Path.exists(savepath):
+
+                #     images = [x for x in savepath.iterdir() if x.suffix == '.png']
+                #     num_gen_images = len(images)
+                #     if num_gen_images >= num_images_per_prompt:
+                #         print(f'Images found. Skipping prompt.')
+                #         continue
+
+                #     elif num_gen_images < num_images_per_prompt:
+                #         offset = num_gen_images
+                #         num_images_per_prompt -= num_gen_images
+                #         print(f'Found {num_gen_images} images. Generating {num_images_per_prompt} more.')
+
+                if not Path.exists(savepath):
+                    Path.mkdir(savepath, exist_ok=True, parents=True)
+
+                # target_img = Path(sample_path).joinpath(f'og_img_{n}').joinpath(f'og_img_{n}.png')
+                # if not Path.exists(target_img):
+                #     img = Image.open(os.path.join(opt.style_ref_img_path, filename)).convert('RGB')
+                #     img.save(target_img)
+
+                for j in range(num_images_per_prompt):
+                    uc = None
+                    if opt.scale != 1.0:
+                        uc = model.get_learned_conditioning(batch_size * [""])
+                    c = model.get_learned_conditioning(batch_size * [prompt])
+                    shape = [opt.C, opt.H // opt.f, opt.W // opt.f]
+                    samples_ddim, intermediates = sampler.sample(S=opt.ddim_steps,
+                                                        conditioning=c,
+                                                        batch_size=batch_size,
+                                                        shape=shape,
+                                                        verbose=False,
+                                                        unconditional_guidance_scale=opt.scale,
+                                                        unconditional_conditioning=uc,
+                                                        eta=opt.ddim_eta,
+                                                        x_T=start_code,
+                                                        rho=opt.rho)
+
+                    x_samples_ddim = model.decode_first_stage(samples_ddim)
+                    aesthetic_score = AestheticScorer().cuda().score(x_samples_ddim)[0].item()
+                    x_samples_ddim = torch.clamp((x_samples_ddim + 1.0) / 2.0, min=0.0, max=1.0)
+                    x_samples_ddim = x_samples_ddim.cpu().permute(0, 2, 3, 1).detach().numpy()
+
+                    print(f"The value of the aesthetic score is {aesthetic_score}")
+                    # x_checked_image, has_nsfw_concept = check_safety(x_samples_ddim)
+                    x_checked_image = x_samples_ddim
+                    x_checked_image_torch = torch.from_numpy(x_checked_image).permute(0, 3, 1, 2)
+                    
+                    score_dir = os.path.join(savepath, f"scores.json")
+                    
+                    z = 0
+                    if os.path.exists(score_dir):
+                        with open(score_dir,"r") as f:
+                            data = json.load(f)
+                            
+                        if data.get(prompt) is not None:
+                            z = len(data[prompt])
+
+                    if not opt.skip_save:
+                        for x_sample in x_checked_image_torch:
+                            x_sample = 255. * rearrange(x_sample.cpu().numpy(), 'c h w -> h w c')
+                            img = Image.fromarray(x_sample.astype(np.uint8))
+                            # img = put_watermark(img, wm_encoder)
+                            img.save(os.path.join(savepath, f'{j + offset}_{z}.png'))
+                            z += 1
+                            # base_count += 1
+                            update_score(score_dir,prompt,aesthetic_score) 
 
             # tic = time.time()
             # all_samples = list()
