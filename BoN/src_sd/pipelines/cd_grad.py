@@ -1,11 +1,3 @@
-#----------------------------------------------------------------------------
-# Created By  : Sayak Mukherjee
-# Created Date: 29-July-2024
-#
-# ---------------------------------------------------------------------------
-# Contains the implementation of the pipeline for Gradient guidance
-# ---------------------------------------------------------------------------
-
 import json
 import copy
 import torch
@@ -16,15 +8,14 @@ from tqdm.auto import tqdm
 from diffusers import StableDiffusionPipeline
 from diffusers.pipelines.stable_diffusion import StableDiffusionPipelineOutput
 from typing import Union, Optional, List, Callable, Dict, Any, Tuple
-from scorers import HPSScorer, AestheticScorer, FaceRecognitionScorer, ClipScorer
+from scorers import HPSScorer, AestheticScorer, FaceRecognitionScorer, ClipScorer,ImageRewardScorer, PickScoreScorer
 from diffusers.schedulers.scheduling_ddpm import DDPMSchedulerOutput, DDPMScheduler
 
-class GradSDPipelineI2I(StableDiffusionPipeline):
+class CoDeGradSD(StableDiffusionPipeline):
     @torch.no_grad()
     def __call__(
         self,
         offset: int = 5,
-        percent_noise: int = 0.4,
         prompt: Union[str, List[str]] = None,
         height: Optional[int] = None,
         width: Optional[int] = None,
@@ -137,14 +128,13 @@ class GradSDPipelineI2I(StableDiffusionPipeline):
         do_classifier_free_guidance = guidance_scale > 1.0
 
         # Generate in batches
-        assert num_images_per_prompt % self.genbatch == 0
+        assert n_samples % self.genbatch == 0
 
         # 3. Encode input prompt
         prompt_embeds = self._encode_prompt(
             prompt,
             device,
-            self.genbatch,
-            # n_samples,
+            n_samples * self.genbatch,
             # num_images_per_prompt,
             do_classifier_free_guidance,
             negative_prompt,
@@ -172,25 +162,22 @@ class GradSDPipelineI2I(StableDiffusionPipeline):
         # 6. Prepare extra step kwargs.
         extra_step_kwargs = self.prepare_extra_step_kwargs(generator, eta)
 
-        # 7. Denoising loop for BoN
-        is_failed = False
+        # 7. Denoising loop for BoN 
+        is_failed = True
         num_batch = num_images_per_prompt // self.genbatch
-
+        
         for batch_iter in tqdm(range(num_batch), total=num_batch):
 
             curr_samples = latents[batch_iter * self.genbatch: (batch_iter + 1) * self.genbatch]
-
-            # print(curr_samples.shape)
-
+            curr_samples = curr_samples.repeat(n_samples, 1, 1, 1) # (n_samples, 4, 64, 64)
+            
             num_warmup_steps = len(timesteps) - num_inference_steps * self.scheduler.order
             for i, t in enumerate(timesteps):
 
-                if t > 1000 * percent_noise:
-                    continue
-
                 # expand the latents if we are doing classifier free guidance
+                # latent_model_input = torch.cat([latents] * 2) if do_classifier_free_guidance else latents
+                
                 latent_model_input = torch.cat([curr_samples] * 2) if do_classifier_free_guidance else curr_samples
-
                 latent_model_input = self.scheduler.scale_model_input(latent_model_input, t)
 
                 # predict the noise residual
@@ -204,55 +191,91 @@ class GradSDPipelineI2I(StableDiffusionPipeline):
                 # perform guidance
                 if do_classifier_free_guidance:
                     noise_pred_uncond, noise_pred_text = noise_pred.chunk(2)
+                    correction = noise_pred_text - noise_pred_uncond
                     noise_pred = noise_pred_uncond + guidance_scale * (noise_pred_text - noise_pred_uncond)
 
-                # # gradient guidance
-                # sqrt_1minus_alpha_t = (1 - self.scheduler.alphas_cumprod[t] ) **0.5
-                # grad = self.compute_gradient(curr_samples, prompt, noise_pred, t)
-
-                # noise_pred -= sqrt_1minus_alpha_t * self.target_guidance * grad 
-
-                # curr_samples = self.scheduler.step(noise_pred, t, curr_samples, **extra_step_kwargs).prev_sample
-
-                # prev_timestep = t - self.scheduler.config.num_train_timesteps // self.scheduler.num_inference_steps
-                
-                # gradient guidance - changing the DPS implementation
-                sqrt_1minus_alpha_t = (1 - self.scheduler.alphas_cumprod[t] ) **0.5
-                grad = self.target_guidance * self.compute_gradient(curr_samples, prompt, noise_pred, t)
-
-                # noise_pred -= sqrt_1minus_alpha_t * self.target_guidance * grad 
-
+                # compute the previous noisy sample x_t -> x_t-1
+                # latents = self.scheduler.step(noise_pred, t, latents, **extra_step_kwargs).prev_sample
                 curr_samples = self.scheduler.step(noise_pred, t, curr_samples, **extra_step_kwargs).prev_sample
-                curr_samples = curr_samples + grad
 
                 prev_timestep = t - self.scheduler.config.num_train_timesteps // self.scheduler.num_inference_steps
 
-            rewards = []
-            savepath = Path(self.path.joinpath(prompt)).joinpath("rewards.json")
-            if Path.exists(savepath): # if exists append else create new
-                with open(savepath, 'r') as fp:
-                    rewards = json.load(fp)
+                if ((i + 1) % block_size == 0) or (t == timesteps[-1]): # at the end of block do BoN
+                    
+                    if t > timesteps[-1]: # If not final step use estimates x0
+                        latent_model_input = torch.cat([curr_samples] * 2) if do_classifier_free_guidance else curr_samples
+                        latent_model_input = self.scheduler.scale_model_input(latent_model_input, t)
+
+                        # predict the noise residual
+                        noise_pred = self.unet(
+                            latent_model_input,
+                            prev_timestep,
+                            encoder_hidden_states=prompt_embeds,
+                            cross_attention_kwargs=cross_attention_kwargs,
+                        ).sample
+
+                        # perform guidance
+                        if do_classifier_free_guidance:
+                            noise_pred_uncond, noise_pred_text = noise_pred.chunk(2)
+                            noise_pred = noise_pred_uncond + guidance_scale * (noise_pred_text - noise_pred_uncond)
+
+                        pred_original_temp = self.scheduler.step(noise_pred, prev_timestep, curr_samples, **extra_step_kwargs).pred_original_sample
+                        rewards = self.compute_scores(pred_original_temp, prompt)
+                    else:
+                        rewards = self.compute_scores(curr_samples, prompt)
+                    
+
+                    rewards = torch.cat([x.unsqueeze(0) for x in rewards.chunk(n_samples)], dim=0) # (n_samples, self.genbatch)
+                    select_ind = torch.max(rewards, dim=0)[1]
+
+                    gen_sample = copy.deepcopy(curr_samples)
+                    gen_sample = torch.cat([x.unsqueeze(0) for x in gen_sample.chunk(n_samples)], dim=0) # (n_samples, self.genbatch, 4, 64, 64)
+                    gen_sample = gen_sample.permute(1,0,2,3,4)
+                    curr_samples = torch.cat([x[select_ind[idx]].unsqueeze(0) for idx, x in enumerate(gen_sample)], dim=0) # TODO: Make it efficient
+
+                    if t > timesteps[-1]: # If not the end replicate n times
+                        if t<self.start_time*1000 and t>= self.end_time*1000:
+                            grad = self.compute_gradient(curr_samples, prompt, noise_pred, t)
+                            target_guidance = (correction * correction).mean().sqrt().item() * guidance_scale / (grad * grad).mean().sqrt().item() * self.target_guidance 
+                            curr_samples = curr_samples + target_guidance*grad
+                        curr_samples = curr_samples.repeat(n_samples, 1, 1, 1) # (n_samples, 4, 64, 64)
 
             try:
-                rewards.extend(self.save_outputs(curr_samples, prompt, start = (batch_iter * self.genbatch) + offset, num_try=num_try))
+                self.save_outputs(curr_samples, start=(batch_iter*self.genbatch)+offset, prompt=prompt, num_try=num_try)
             except:
                 is_failed = True
                 continue
+            
+            store_rewards = []
+            savepath = Path(self.path.joinpath(prompt)).joinpath("rewards.json")
+            if Path.exists(savepath): # if exists append else create new
+                with open(savepath, 'r') as fp:
+                    store_rewards = json.load(fp)
+
+            rewards = rewards.permute(1,0)
+            rewards = torch.cat([x[select_ind[idx]].unsqueeze(0) for idx, x in enumerate(rewards)], dim=0) # TODO: Make it efficient
+            store_rewards.extend(rewards.cpu().numpy().tolist())
 
             with open(savepath, 'w') as fp:
-                json.dump(rewards, fp)
-                
+                json.dump(store_rewards, fp)
+
         return is_failed
 
     def set_guidance(self, target_guidance: int = 150):
         self.target_guidance = target_guidance
-
-    def set_retry(self, retry: int = 0):
-        self.retry = retry
-
+        
+    def set_start_time(self, start_time: float=1.0):
+        self.start_time = start_time
+        
+    def set_end_time(self, end_time: float=0.0):
+        self.end_time = end_time
+    
     def set_genbatch(self, genbatch: int = 5):
         self.genbatch = genbatch
 
+    def set_retry(self, retry: int = 0):
+        self.retry = retry
+    
     def set_project_path(self, path):
         self.path = path
 
@@ -266,7 +289,9 @@ class GradSDPipelineI2I(StableDiffusionPipeline):
         decoded_latents = torch.from_numpy(decoded_latents).permute(0,3,1,2)
 
         try:
-            if isinstance(self.scorer, HPSScorer):
+            if isinstance(self.scorer, HPSScorer)or\
+                isinstance(self.scorer, ImageRewardScorer) or\
+                isinstance(self.scorer, PickScoreScorer):
                 prompts = [prompt] * len(decoded_latents)
                 rewards = self.scorer.score(decoded_latents, prompts)
             elif isinstance(self.scorer, FaceRecognitionScorer)or\
@@ -302,7 +327,9 @@ class GradSDPipelineI2I(StableDiffusionPipeline):
         decoded_latents = self.decode_latents(latent)
         decoded_latents = torch.from_numpy(decoded_latents).permute(0,3,1,2)
 
-        if isinstance(self.scorer, HPSScorer):
+        if isinstance(self.scorer, HPSScorer) or\
+            isinstance(self.scorer, ImageRewardScorer) or\
+            isinstance(self.scorer, PickScoreScorer):
             
             prompts = [prompt] * len(decoded_latents)
             out = self.scorer.score(decoded_latents, prompts)
@@ -315,67 +342,47 @@ class GradSDPipelineI2I(StableDiffusionPipeline):
             out = self.scorer.score(decoded_latents)
 
         return out
-
+    
     @torch.enable_grad()
     def compute_gradient(self, latents, prompt, noise_pred, t):
-
-        ##### Debugging
-        # extra_step_kwargs = self.prepare_extra_step_kwargs(None, 0.0)
-        # pred_original_sample = self.scheduler.step(noise_pred, t, latents, **extra_step_kwargs).pred_original_sample
-        
-        # decoded_latents = self.decode_latents(latents)
-        # image_pils = self.numpy_to_pil(decoded_latents)
-
-        # savepath = Path(self.path.joinpath(prompt))
-        # if not Path.exists(savepath):
-        #     Path.mkdir(savepath, exist_ok=True, parents=True)
-
-        # for idx in range(len(image_pils)):
-        #     image_pils[idx].save(savepath.joinpath(f"{t}.png"))
-        # ##### Debugging
-
+        # Enable gradient computation for latents
         latent_in = latents.detach().requires_grad_(True)
-
-        pred_original_sample = predict_x0_from_xt(
-                            self.scheduler,
-                            noise_pred,   # (2,4,64,64),
-                            t,
-                            latent_in
-                        )      
         
-        im_pix_un = self.vae.decode(pred_original_sample.to(self.vae.dtype) / self.vae.config.scaling_factor).sample
-        im_pix = ((im_pix_un / 2) + 0.5).clamp(0, 1).to(torch.float).cpu()
-
-        ##### Debugging
-        # image_pils = self.numpy_to_pil(im_pix.detach().permute(0, 2, 3, 1).float().numpy())
-
-        # savepath = Path(self.path.joinpath(prompt))
-        # if not Path.exists(savepath):
-        #     Path.mkdir(savepath, exist_ok=True, parents=True)
-
-        # for idx in range(len(image_pils)):
-        #     image_pils[idx].save(savepath.joinpath(f"{t}.png"))
-        # ##### Debugging
-
-        if isinstance(self.scorer, HPSScorer):
+        # Get predictions for the full batch
+        pred_original_sample = predict_x0_from_xt(
+            self.scheduler,
+            noise_pred,
+            t,
+            latent_in
+        )
+        
+        # Decode to image space with mixed precision to save memory
+        with torch.cuda.amp.autocast():
+            im_pix_un = self.vae.decode(
+                pred_original_sample.to(self.vae.dtype) / self.vae.config.scaling_factor
+            ).sample
             
+        # Process images
+        im_pix = ((im_pix_un / 2) + 0.5).clamp(0, 1).cpu()
+        
+        # Compute rewards/loss based on scorer type
+        if isinstance(self.scorer, HPSScorer):
             prompts = [prompt] * len(im_pix)
             rewards = -1 * self.scorer.loss_fn(im_pix, prompts)
-
-        elif isinstance(self.scorer, FaceRecognitionScorer) or\
-              isinstance(self.scorer, ClipScorer):
-            
+        elif isinstance(self.scorer, (FaceRecognitionScorer, ClipScorer)):
             rewards = -1 * self.scorer.loss_fn(im_pix, self.target_img)
         else:
             rewards = -1 * self.scorer.loss_fn(im_pix)
-
+            
+        # Compute gradient
         grad = torch.autograd.grad(rewards.sum(), latent_in)[0]
-        grad_norm = torch.norm(grad, p=2, dim=(1, 2, 3), keepdim=True) + 1e-8  # Add small value to avoid division by zero
-        normalized_grad = grad / grad_norm
-        return normalized_grad.clone().cuda()
-
-        return grad.clone().cuda()
-
+        
+        # Clean up to free memory
+        del im_pix_un, im_pix, rewards
+        torch.cuda.empty_cache()
+        
+        return grad.cuda().clone()
+    
 def predict_x0_from_xt(
     self: DDPMScheduler,
     model_output: torch.FloatTensor,
@@ -407,7 +414,7 @@ def predict_x0_from_xt(
     # 2. compute predicted original sample from predicted noise also called
     # "predicted x_0" of formula (15) from https://arxiv.org/pdf/2006.11239.pdf
     if self.config.prediction_type == "epsilon":
-        pred_original_sample = (sample - (beta_prod_t ** (0.5)) * model_output) / (alpha_prod_t ** (0.5))
+        pred_original_sample = (sample - beta_prod_t ** (0.5) * model_output) / alpha_prod_t ** (0.5)
     elif self.config.prediction_type == "sample":
         pred_original_sample = model_output
     elif self.config.prediction_type == "v_prediction":

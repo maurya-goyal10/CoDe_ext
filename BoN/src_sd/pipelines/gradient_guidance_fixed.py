@@ -19,18 +19,17 @@ from typing import Union, Optional, List, Callable, Dict, Any, Tuple
 from scorers import HPSScorer, AestheticScorer, FaceRecognitionScorer, ClipScorer
 from diffusers.schedulers.scheduling_ddpm import DDPMSchedulerOutput, DDPMScheduler
 
-class GradSDPipelineI2I(StableDiffusionPipeline):
+class GradSDPipeline_fixed(StableDiffusionPipeline):
     @torch.no_grad()
     def __call__(
         self,
         offset: int = 5,
-        percent_noise: int = 0.4,
         prompt: Union[str, List[str]] = None,
         height: Optional[int] = None,
         width: Optional[int] = None,
         num_inference_steps: int = 50,
-        num_try: Optional[int] = 1,
         guidance_scale: float = 7.5,
+        num_try: Optional[int] = 1,
         n_samples: int = 5,
         block_size: int = 5,
         negative_prompt: Optional[Union[str, List[str]]] = None,
@@ -173,6 +172,7 @@ class GradSDPipelineI2I(StableDiffusionPipeline):
         extra_step_kwargs = self.prepare_extra_step_kwargs(generator, eta)
 
         # 7. Denoising loop for BoN
+
         is_failed = False
         num_batch = num_images_per_prompt // self.genbatch
 
@@ -184,9 +184,6 @@ class GradSDPipelineI2I(StableDiffusionPipeline):
 
             num_warmup_steps = len(timesteps) - num_inference_steps * self.scheduler.order
             for i, t in enumerate(timesteps):
-
-                if t > 1000 * percent_noise:
-                    continue
 
                 # expand the latents if we are doing classifier free guidance
                 latent_model_input = torch.cat([curr_samples] * 2) if do_classifier_free_guidance else curr_samples
@@ -206,7 +203,7 @@ class GradSDPipelineI2I(StableDiffusionPipeline):
                     noise_pred_uncond, noise_pred_text = noise_pred.chunk(2)
                     noise_pred = noise_pred_uncond + guidance_scale * (noise_pred_text - noise_pred_uncond)
 
-                # # gradient guidance
+                # gradient guidance
                 # sqrt_1minus_alpha_t = (1 - self.scheduler.alphas_cumprod[t] ) **0.5
                 # grad = self.compute_gradient(curr_samples, prompt, noise_pred, t)
 
@@ -215,18 +212,33 @@ class GradSDPipelineI2I(StableDiffusionPipeline):
                 # curr_samples = self.scheduler.step(noise_pred, t, curr_samples, **extra_step_kwargs).prev_sample
 
                 # prev_timestep = t - self.scheduler.config.num_train_timesteps // self.scheduler.num_inference_steps
-                
-                # gradient guidance - changing the DPS implementation
-                sqrt_1minus_alpha_t = (1 - self.scheduler.alphas_cumprod[t] ) **0.5
-                grad = self.target_guidance * self.compute_gradient(curr_samples, prompt, noise_pred, t)
 
-                # noise_pred -= sqrt_1minus_alpha_t * self.target_guidance * grad 
+                # gradient guidance norm
+                if(getattr(self, 'start_time', None) is not None):
+                    if(t<self.start_time*1000 and t>=self.end_time*1000): 
+                        sqrt_1minus_alpha_t = (1 - self.scheduler.alphas_cumprod[t] ) **0.5
+                        grad = self.target_guidance * self.compute_gradient(curr_samples, prompt, noise_pred, t)
 
-                curr_samples = self.scheduler.step(noise_pred, t, curr_samples, **extra_step_kwargs).prev_sample
-                curr_samples = curr_samples + grad
+                        # noise_pred -= sqrt_1minus_alpha_t * self.target_guidance * grad 
 
-                prev_timestep = t - self.scheduler.config.num_train_timesteps // self.scheduler.num_inference_steps
+                        curr_samples = self.scheduler.step(noise_pred, t, curr_samples, **extra_step_kwargs).prev_sample
+                        curr_samples = curr_samples + grad
+                        
+                        prev_timestep = t - self.scheduler.config.num_train_timesteps // self.scheduler.num_inference_steps
+                    else:
+                        curr_samples = self.scheduler.step(noise_pred, t, curr_samples, **extra_step_kwargs).prev_sample
+                else:
+                    sqrt_1minus_alpha_t = (1 - self.scheduler.alphas_cumprod[t] ) **0.5
+                    grad = self.target_guidance * self.compute_gradient(curr_samples, prompt, noise_pred, t)
 
+                    # noise_pred -= sqrt_1minus_alpha_t * self.target_guidance * grad 
+
+                    curr_samples = self.scheduler.step(noise_pred, t, curr_samples, **extra_step_kwargs).prev_sample
+                    curr_samples = curr_samples + grad
+                    
+                    prev_timestep = t - self.scheduler.config.num_train_timesteps // self.scheduler.num_inference_steps
+                print(t.item())
+                                
             rewards = []
             savepath = Path(self.path.joinpath(prompt)).joinpath("rewards.json")
             if Path.exists(savepath): # if exists append else create new
@@ -238,15 +250,21 @@ class GradSDPipelineI2I(StableDiffusionPipeline):
             except:
                 is_failed = True
                 continue
-
+            
             with open(savepath, 'w') as fp:
                 json.dump(rewards, fp)
-                
+
         return is_failed
 
     def set_guidance(self, target_guidance: int = 150):
         self.target_guidance = target_guidance
 
+    def set_start_time(self, start_time: float=1.0):
+        self.start_time = start_time
+        
+    def set_end_time(self, end_time: float=0.0):
+        self.end_time = end_time
+        
     def set_retry(self, retry: int = 0):
         self.retry = retry
 
@@ -370,11 +388,8 @@ class GradSDPipelineI2I(StableDiffusionPipeline):
             rewards = -1 * self.scorer.loss_fn(im_pix)
 
         grad = torch.autograd.grad(rewards.sum(), latent_in)[0]
-        grad_norm = torch.norm(grad, p=2, dim=(1, 2, 3), keepdim=True) + 1e-8  # Add small value to avoid division by zero
-        normalized_grad = grad / grad_norm
-        return normalized_grad.clone().cuda()
-
-        return grad.clone().cuda()
+        norm_grad = grad / rewards.norm(p=1)
+        return norm_grad.clone().cuda()
 
 def predict_x0_from_xt(
     self: DDPMScheduler,
@@ -407,7 +422,7 @@ def predict_x0_from_xt(
     # 2. compute predicted original sample from predicted noise also called
     # "predicted x_0" of formula (15) from https://arxiv.org/pdf/2006.11239.pdf
     if self.config.prediction_type == "epsilon":
-        pred_original_sample = (sample - (beta_prod_t ** (0.5)) * model_output) / (alpha_prod_t ** (0.5))
+        pred_original_sample = (sample - beta_prod_t ** (0.5) * model_output) / alpha_prod_t ** (0.5)
     elif self.config.prediction_type == "sample":
         pred_original_sample = model_output
     elif self.config.prediction_type == "v_prediction":

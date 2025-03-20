@@ -9,3 +9,7 @@ from .gradient_img2img import GradSDPipelineI2I
 from .cd_pipe import CoDeSDPipeline
 from .cd_pipe_img2img import CoDeSDPipelineI2I
 from .gradient_cd_bon import GradCoDeSDPipelineI2I
+from .gradient_img2img_mpgd import GradSDPipelineI2I_mpgd
+from .gradient_guidance_fixed import GradSDPipeline_fixed
+from .gradient_code import GradCodeBlockwiseSDPipeline
+from .cd_grad import CoDeGradSD

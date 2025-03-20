@@ -3,9 +3,14 @@ import torch
 from transformers import AutoModel, CLIPProcessor
 import torchvision
 
+device = (
+    "cuda"
+    if torch.cuda.is_available()
+    else "cpu"
+)
 
 class PickScoreScorer(torch.nn.Module):
-    def __init__(self, dtype, device):
+    def __init__(self, device = device, dtype=torch.float32):
         super().__init__()
         self.dtype = dtype
         self.device = device
@@ -32,7 +37,7 @@ class PickScoreScorer(torch.nn.Module):
         text_embeds = text_embeds / torch.norm(text_embeds, dim=-1, keepdim=True)
 
         inputs = torchvision.transforms.Resize(self.target_size)(images)
-        inputs = self.normalize(inputs).to(self.dtype)
+        inputs = self.normalize(inputs).to(self.device,self.dtype)
         image_embeds = self.model.get_image_features(pixel_values=inputs)
         image_embeds = image_embeds / torch.norm(image_embeds, dim=-1, keepdim=True)
         logits_per_image = image_embeds @ text_embeds.T

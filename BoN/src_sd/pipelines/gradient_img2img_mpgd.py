@@ -18,8 +18,9 @@ from diffusers.pipelines.stable_diffusion import StableDiffusionPipelineOutput
 from typing import Union, Optional, List, Callable, Dict, Any, Tuple
 from scorers import HPSScorer, AestheticScorer, FaceRecognitionScorer, ClipScorer
 from diffusers.schedulers.scheduling_ddpm import DDPMSchedulerOutput, DDPMScheduler
+from diffusers.schedulers.scheduling_ddim import DDIMSchedulerOutput, DDIMScheduler
 
-class GradSDPipelineI2I(StableDiffusionPipeline):
+class GradSDPipelineI2I_mpgd(StableDiffusionPipeline):
     @torch.no_grad()
     def __call__(
         self,
@@ -182,7 +183,7 @@ class GradSDPipelineI2I(StableDiffusionPipeline):
 
             # print(curr_samples.shape)
 
-            num_warmup_steps = len(timesteps) - num_inference_steps * self.scheduler.order
+            # num_warmup_steps = len(timesteps) - num_inference_steps * self.scheduler.order
             for i, t in enumerate(timesteps):
 
                 if t > 1000 * percent_noise:
@@ -204,6 +205,7 @@ class GradSDPipelineI2I(StableDiffusionPipeline):
                 # perform guidance
                 if do_classifier_free_guidance:
                     noise_pred_uncond, noise_pred_text = noise_pred.chunk(2)
+                    correction = noise_pred_text - noise_pred_uncond
                     noise_pred = noise_pred_uncond + guidance_scale * (noise_pred_text - noise_pred_uncond)
 
                 # # gradient guidance
@@ -217,15 +219,36 @@ class GradSDPipelineI2I(StableDiffusionPipeline):
                 # prev_timestep = t - self.scheduler.config.num_train_timesteps // self.scheduler.num_inference_steps
                 
                 # gradient guidance - changing the DPS implementation
-                sqrt_1minus_alpha_t = (1 - self.scheduler.alphas_cumprod[t] ) **0.5
-                grad = self.target_guidance * self.compute_gradient(curr_samples, prompt, noise_pred, t)
-
-                # noise_pred -= sqrt_1minus_alpha_t * self.target_guidance * grad 
-
                 curr_samples = self.scheduler.step(noise_pred, t, curr_samples, **extra_step_kwargs).prev_sample
-                curr_samples = curr_samples + grad
-
+                if(t<=700 and t>=300):
+                    # orig_samples = self.scheduler.step(noise_pred,t,curr_samples,**extra_step_kwargs).pred_original_sample
+                    # shape of noise pred is  1,4,64,76
+                    grad = self.compute_gradient(curr_samples, prompt, noise_pred, t, correction, guidance_scale)
+                    curr_samples = self.scheduler.add_noise(grad, noise_pred, prev_timestep)               
                 prev_timestep = t - self.scheduler.config.num_train_timesteps // self.scheduler.num_inference_steps
+
+                # Debugging
+                ### ----
+                pred_original_sample = predict_x0_from_xt(
+                        self.scheduler,
+                        noise_pred,   # (1,4,64,64),
+                        t,
+                        curr_samples
+                )  
+                im_pix_un = self.vae.decode(pred_original_sample.to(self.vae.dtype) / self.vae.config.scaling_factor).sample
+                im_pix = ((im_pix_un / 2) + 0.5).clamp(0, 1).to(torch.float).cpu()
+                
+                image_pils = self.numpy_to_pil(im_pix.permute(0, 2, 3, 1)[0].detach().numpy())
+                savepath = Path(self.path.joinpath(prompt))
+                if not Path.exists(savepath):
+                    Path.mkdir(savepath, exist_ok=True, parents=True)
+
+                # for idx in range(len(image_pils)):
+                image_pils[0].save(savepath.joinpath(f"{t}_curr_sample.png"))
+                ### ----
+                # Debugging -ends
+                print(t.item())
+
 
             rewards = []
             savepath = Path(self.path.joinpath(prompt)).joinpath("rewards.json")
@@ -317,10 +340,16 @@ class GradSDPipelineI2I(StableDiffusionPipeline):
         return out
 
     @torch.enable_grad()
-    def compute_gradient(self, latents, prompt, noise_pred, t):
-
-        ##### Debugging
-        # extra_step_kwargs = self.prepare_extra_step_kwargs(None, 0.0)
+    def compute_gradient(self, latents, prompt, noise_pred, t, correction, guidance_scale = 7.5):
+        # Convert latents to pixel space
+        # for the case of not taking the gradients through the VAE also
+        # with torch.no_grad():
+        #     im_pix_un = self.vae.decode(latents.to(self.vae.dtype) / self.vae.config.scaling_factor).sample
+        #     im_pix = ((im_pix_un / 2) + 0.5).clamp(0, 1).to(torch.float)
+        #     im_pix.requires_grad_(True)
+        
+        # latent_in = latents.detach().requires_grad_(True)
+                # extra_step_kwargs = self.prepare_extra_step_kwargs(None, 0.0)
         # pred_original_sample = self.scheduler.step(noise_pred, t, latents, **extra_step_kwargs).pred_original_sample
         
         # decoded_latents = self.decode_latents(latents)
@@ -332,49 +361,76 @@ class GradSDPipelineI2I(StableDiffusionPipeline):
 
         # for idx in range(len(image_pils)):
         #     image_pils[idx].save(savepath.joinpath(f"{t}.png"))
-        # ##### Debugging
-
-        latent_in = latents.detach().requires_grad_(True)
-
         pred_original_sample = predict_x0_from_xt(
                             self.scheduler,
                             noise_pred,   # (2,4,64,64),
                             t,
-                            latent_in
+                            latents
                         )      
         
-        im_pix_un = self.vae.decode(pred_original_sample.to(self.vae.dtype) / self.vae.config.scaling_factor).sample
+        # print(f"The shape of the pred original image is: {pred_original_sample.shape}") # (1,4,64,76)
+        
+        pred_original_sample_in = pred_original_sample.detach().requires_grad_(True)
+        # Taking the gradients through the VAE
+        im_pix_un = self.vae.decode(pred_original_sample_in.to(self.vae.dtype) / self.vae.config.scaling_factor).sample
         im_pix = ((im_pix_un / 2) + 0.5).clamp(0, 1).to(torch.float).cpu()
-
-        ##### Debugging
-        # image_pils = self.numpy_to_pil(im_pix.detach().permute(0, 2, 3, 1).float().numpy())
-
-        # savepath = Path(self.path.joinpath(prompt))
-        # if not Path.exists(savepath):
-        #     Path.mkdir(savepath, exist_ok=True, parents=True)
+        # print(f"The shape of the image is {im_pix.shape}") # (1,3,512,608)
+        # im_pix.requires_grad_(True)
+        
+        # Debugging
+        image_pils = self.numpy_to_pil(im_pix.permute(0, 2, 3, 1)[0].detach().numpy())
+        savepath = Path(self.path.joinpath(prompt))
+        if not Path.exists(savepath):
+            Path.mkdir(savepath, exist_ok=True, parents=True)
 
         # for idx in range(len(image_pils)):
-        #     image_pils[idx].save(savepath.joinpath(f"{t}.png"))
-        # ##### Debugging
-
+        image_pils[0].save(savepath.joinpath(f"{t}.png"))
+        # -- Debugging ends here
+               
+        # Compute loss and gradients in pixel space
         if isinstance(self.scorer, HPSScorer):
-            
             prompts = [prompt] * len(im_pix)
             rewards = -1 * self.scorer.loss_fn(im_pix, prompts)
-
-        elif isinstance(self.scorer, FaceRecognitionScorer) or\
-              isinstance(self.scorer, ClipScorer):
-            
+        elif isinstance(self.scorer, FaceRecognitionScorer) or isinstance(self.scorer, ClipScorer):
             rewards = -1 * self.scorer.loss_fn(im_pix, self.target_img)
         else:
             rewards = -1 * self.scorer.loss_fn(im_pix)
+            
+        # print(f"The rewards are: {rewards}")
+        # normalising the rewards - rewards is 1,1 Tensor
+        # rewards = torch.linalg.norm(rewards)
 
-        grad = torch.autograd.grad(rewards.sum(), latent_in)[0]
-        grad_norm = torch.norm(grad, p=2, dim=(1, 2, 3), keepdim=True) + 1e-8  # Add small value to avoid division by zero
-        normalized_grad = grad / grad_norm
-        return normalized_grad.clone().cuda()
+        # Get gradients in pixel space
+        # Not taking the gradients through the VAE
+        # pixel_grad = torch.autograd.grad(rewards.sum(), im_pix)[0]
+        # Taking the gradients through the VAE
+        pixel_grad = torch.autograd.grad(rewards.sum(), pred_original_sample_in)[0]
+        # grad_norm = torch.norm(pixel_grad, p=2, dim=(1, 2, 3), keepdim=True) + 1e-8
+        # pixel_grad /= grad_norm
 
-        return grad.clone().cuda()
+        # Apply gradients in pixel space
+        with torch.no_grad():
+            # Apply gradient step in pixel space
+            target_guidance = (correction * correction).mean().sqrt().item() * guidance_scale / (pixel_grad * pixel_grad).mean().sqrt().item() * self.target_guidance 
+            print(target_guidance)
+            guided_orig = pred_original_sample + target_guidance * pixel_grad
+            # guided_orig = guided_orig.clamp(0, 1)  
+            
+            # see how the values of predicted original and the target guidance are
+            # print(f"Predicted original data: {pred_original_sample.min()}, {pred_original_sample.max()}")
+            # print(f"pixel grad data: {pixel_grad.min()}, {pixel_grad.max()}")
+            
+            # modified_pixels = im_pix + target_guidance * pixel_grad
+            # modified_pixels = modified_pixels.clamp(0, 1)
+            
+            # # Convert back to [-1, 1] range for VAE
+            # modified_pixels = (modified_pixels * 2) - 1
+            
+            # # Encode modified pixels back to latent space
+            # latent_out = self.vae.encode(modified_pixels.to(self.vae.dtype)).latent_dist.sample()
+            # latent_out = latent_out * self.vae.config.scaling_factor
+        
+        return guided_orig.to(dtype=latents.dtype, device=latents.device)
 
 def predict_x0_from_xt(
     self: DDPMScheduler,
@@ -383,7 +439,7 @@ def predict_x0_from_xt(
     sample: torch.FloatTensor,
 ) -> Union[DDPMSchedulerOutput, Tuple]:
     
-    assert isinstance(self, DDPMScheduler)
+    # assert isinstance(self, DDPMScheduler)
     if self.num_inference_steps is None:
         raise ValueError(
             "Number of inference steps is 'None', you need to run 'set_timesteps' after creating the scheduler"
@@ -391,7 +447,7 @@ def predict_x0_from_xt(
 
     t = timestep
 
-    prev_t = self.previous_timestep(t)
+    # prev_t = self.previous_timestep(t)
 
     if model_output.shape[1] == sample.shape[1] * 2 and self.variance_type in ["learned", "learned_range"]:
         model_output, predicted_variance = torch.split(model_output, sample.shape[1], dim=1)
@@ -400,9 +456,9 @@ def predict_x0_from_xt(
 
     # 1. compute alphas, betas
     alpha_prod_t = self.alphas_cumprod[t]
-    alpha_prod_t_prev = self.alphas_cumprod[prev_t] if prev_t >= 0 else self.one
+    # alpha_prod_t_prev = self.alphas_cumprod[prev_t] if prev_t >= 0 else self.one
     beta_prod_t = 1 - alpha_prod_t
-    current_alpha_t = alpha_prod_t / alpha_prod_t_prev
+    # current_alpha_t = alpha_prod_t / alpha_prod_t_prev
 
     # 2. compute predicted original sample from predicted noise also called
     # "predicted x_0" of formula (15) from https://arxiv.org/pdf/2006.11239.pdf
@@ -427,3 +483,56 @@ def predict_x0_from_xt(
         )
 
     return pred_original_sample.to(dtype=sample.dtype)
+
+
+def predict_xt_from_x0(
+    self: DDPMScheduler,
+    model_output: torch.FloatTensor,
+    timestep: int,
+    sample: torch.FloatTensor,
+) -> Union[DDPMSchedulerOutput, Tuple]:
+    
+    # assert isinstance(self, DDPMScheduler)
+    if self.num_inference_steps is None:
+        raise ValueError(
+            "Number of inference steps is 'None', you need to run 'set_timesteps' after creating the scheduler"
+        )
+
+    t = timestep
+
+    # prev_t = self.previous_timestep(t)
+
+    if model_output.shape[1] == sample.shape[1] * 2 and self.variance_type in ["learned", "learned_range"]:
+        model_output, predicted_variance = torch.split(model_output, sample.shape[1], dim=1)
+    else:
+        predicted_variance = None
+
+    # 1. compute alphas, betas
+    alpha_prod_t = self.alphas_cumprod[t]
+    # alpha_prod_t_prev = self.alphas_cumprod[prev_t] if prev_t >= 0 else self.one
+    beta_prod_t = 1 - alpha_prod_t
+    # current_alpha_t = alpha_prod_t / alpha_prod_t_prev
+    
+    # 2. compute predicted original sample from predicted noise also called
+    # "predicted x_0" of formula (15) from https://arxiv.org/pdf/2006.11239.pdf
+    if self.config.prediction_type == "epsilon":
+        pred_sample_xt = (((1-alpha_prod_t) ** (0.5)) * model_output) + ((alpha_prod_t ** (0.5)) * sample)
+    elif self.config.prediction_type == "sample":
+        pred_sample_xt = model_output
+    elif self.config.prediction_type == "v_prediction":
+        pred_sample_xt = (alpha_prod_t**0.5) * sample - (beta_prod_t**0.5) * model_output
+    else:
+        raise ValueError(
+            f"prediction_type given as {self.config.prediction_type} must be one of `epsilon`, `sample` or"
+            " `v_prediction`  for the DDPMScheduler."
+        )
+        
+    # 3. Clip or threshold "noisy x_t"
+    if self.config.thresholding:
+        pred_sample_xt = self._threshold_sample(pred_sample_xt)
+    elif self.config.clip_sample:
+        pred_sample_xt = pred_sample_xt.clamp(
+            -self.config.clip_sample_range, self.config.clip_sample_range
+        )
+
+    return pred_sample_xt.to(dtype=sample.dtype)

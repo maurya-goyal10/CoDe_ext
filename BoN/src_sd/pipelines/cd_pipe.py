@@ -16,7 +16,7 @@ from tqdm.auto import tqdm
 from diffusers import StableDiffusionPipeline
 from diffusers.pipelines.stable_diffusion import StableDiffusionPipelineOutput
 from typing import Union, Optional, List, Callable, Dict, Any
-from scorers import HPSScorer, AestheticScorer, FaceRecognitionScorer, ClipScorer,ImageRewardScorer
+from scorers import HPSScorer, AestheticScorer, FaceRecognitionScorer, ClipScorer,ImageRewardScorer, PickScoreScorer
 
 class CoDeSDPipeline(StableDiffusionPipeline):
     @torch.no_grad()
@@ -283,7 +283,8 @@ class CoDeSDPipeline(StableDiffusionPipeline):
 
         try:
             if isinstance(self.scorer, HPSScorer)or\
-                isinstance(self.scorer, ImageRewardScorer):
+                isinstance(self.scorer, ImageRewardScorer) or\
+                isinstance(self.scorer, PickScoreScorer):
                 prompts = [prompt] * len(decoded_latents)
                 rewards = self.scorer.score(decoded_latents, prompts)
             elif isinstance(self.scorer, FaceRecognitionScorer)or\
@@ -320,7 +321,8 @@ class CoDeSDPipeline(StableDiffusionPipeline):
         decoded_latents = torch.from_numpy(decoded_latents).permute(0,3,1,2)
 
         if isinstance(self.scorer, HPSScorer) or\
-            isinstance(self.scorer, ImageRewardScorer):
+            isinstance(self.scorer, ImageRewardScorer) or\
+            isinstance(self.scorer, PickScoreScorer):
             
             prompts = [prompt] * len(decoded_latents)
             out = self.scorer.score(decoded_latents, prompts)

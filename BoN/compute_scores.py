@@ -25,11 +25,11 @@ def main():
 
     currhost = os.uname()[1]
     root_path = Path('/glb/data/ptxd_dash/nlasqh/PhD_GuidedDiff') if "housky" in currhost\
-                    # else Path('/home/sayak/Projects/PhD_GuidedDiff')
                     else Path('/tudelft.net/staff-umbrella/StudentsCVlab/mgoyal/CoDe_ext')
+                    # else Path('/home/sayak/Projects/PhD_GuidedDiff')
     outputs_path = Path('/glb/data/ptxd_dash/nlasqh/PhD_GuidedDiff/BoN/outputs') if "housky" in currhost\
-                    # else Path('/home/sayak/Projects/PhD_GuidedDiff/BoN/outputs_img_abla')
                     else Path('/tudelft.net/staff-umbrella/StudentsCVlab/mgoyal/CoDe_ext/BoN/outputs_img_abla')
+                    # else Path('/home/sayak/Projects/PhD_GuidedDiff/BoN/outputs_img_abla')
 
     
     # Load unconditional rewards
@@ -179,11 +179,11 @@ def ref_divs():
 
     currhost = os.uname()[1]
     root_path = Path('/glb/data/ptxd_dash/nlasqh/PhD_GuidedDiff') if "housky" in currhost\
-                    # else Path('/tudelft.net/staff-bulk/ewi/insy/VisionLab/smukherjee/PhD_GuidedDiff')
                     else Path('/tudelft.net/staff-umbrella/StudentsCVlab/mgoyal/CoDe_ext')
+                    # else Path('/tudelft.net/staff-bulk/ewi/insy/VisionLab/smukherjee/PhD_GuidedDiff')
     outputs_path = Path('/glb/data/ptxd_dash/nlasqh/PhD_GuidedDiff/BoN/outputs') if "housky" in currhost\
-                    # else Path('/tudelft.net/staff-bulk/ewi/insy/VisionLab/smukherjee/PhD_GuidedDiff/BoN/outputs')
                     else Path('/tudelft.net/staff-umbrella/StudentsCVlab/mgoyal/CoDe_ext/BoN/outputs')
+                    # else Path('/tudelft.net/staff-bulk/ewi/insy/VisionLab/smukherjee/PhD_GuidedDiff/BoN/outputs')
 
     # Compute scores
     perf = dict()

@@ -27,9 +27,12 @@ from pipelines import (
     GradSDPipeline, 
     BoNSDPipelineI2I,
     GradSDPipelineI2I,
+    GradSDPipelineI2I_mpgd,
     CoDeSDPipeline,
     CoDeSDPipelineI2I,
     GradCoDeSDPipelineI2I,
+    GradSDPipeline_fixed,
+    CoDeGradSD,
     prepare_image, 
     encode
 )
@@ -111,8 +114,24 @@ def run_experiment(config):
         pipe = GradSDPipeline.from_pretrained(
             model_id, torch_dtype=torch.float16).to(device)
         pipe.set_guidance(config.guidance.guidance_scale)
+    elif config.guidance.method == 'grad_fixed':
+        pipe = GradSDPipeline_fixed.from_pretrained(
+            model_id, torch_dtype=torch.float16).to(device)
+        pipe.set_guidance(config.guidance.guidance_scale)
+        pipe.set_start_time(config.guidance.start_time)
+        pipe.set_end_time(config.guidance.end_time)
+    elif config.guidance.method == 'code_grad':
+        pipe = CoDeGradSD.from_pretrained(
+            model_id, torch_dtype=torch.float16).to(device)
+        pipe.set_guidance(config.guidance.guidance_scale)
+        pipe.set_start_time(config.guidance.start_time)
+        pipe.set_end_time(config.guidance.end_time)
     elif config.guidance.method == 'grad_i2i':
         pipe = GradSDPipelineI2I.from_pretrained(
+            model_id, torch_dtype=torch.float16).to(device)
+        pipe.set_guidance(config.guidance.guidance_scale)
+    elif config.guidance.method == 'grad_i2i_mpgd':
+        pipe = GradSDPipelineI2I_mpgd.from_pretrained(
             model_id, torch_dtype=torch.float16).to(device)
         pipe.set_guidance(config.guidance.guidance_scale)
     elif config.guidance.method == "ibon":
@@ -140,6 +159,11 @@ def run_experiment(config):
     # Change to DDPM scheduler
     pipe.scheduler = DDPMScheduler.from_config(
         pipe.scheduler.config, timestep_spacing="trailing")
+    if config.get('scheduler') is not None and config.scheduler == 'ddim':
+        pipe.scheduler = DDIMScheduler.from_config(
+        pipe.scheduler.config, timestep_spacing="trailing")
+        pipe.scheduler.eta = 1.0
+        print("DDIM Scheduler with eta {pipe.scheduler.eta}")
 
     # Set scorer
     if config.guidance.scorer == "aesthetic":
@@ -232,7 +256,7 @@ def run_experiment(config):
     
 
     if isinstance(pipe, CoDeSDPipelineI2I) or isinstance(pipe, SDPipelineI2I)\
-        or isinstance(pipe, BoNSDPipelineI2I) or isinstance(pipe, GradSDPipelineI2I)\
+        or isinstance(pipe, BoNSDPipelineI2I) or isinstance(pipe, GradSDPipelineI2I) or isinstance(pipe, GradSDPipelineI2I_mpgd)\
         or isinstance(pipe, GradCoDeSDPipelineI2I):
 
         # if config.input_image:
