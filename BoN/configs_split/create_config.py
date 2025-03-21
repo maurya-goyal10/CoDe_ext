@@ -5,7 +5,7 @@ import numpy as np
 from pathlib import Path
 from omegaconf import OmegaConf
 
-_METHODS = ['code_grad'] # ['c_bon', 'i2i'] # 'ibon', ibon_i2i', 'bon', 'uncond', 'i2i', 'bon_i2i', 'code', 'c_code', 'grad_i2i_mpgd', 'grad', 'code_grad', 'code'
+_METHODS = ['grad_fixed_mpgd'] # ['c_bon', 'i2i'] # 'ibon', ibon_i2i', 'bon', 'uncond', 'i2i', 'bon_i2i', 'code', 'c_code', 'grad_i2i_mpgd', 'grad', 'code_grad', 'code', 'code_grad'
 
 _SCORERS = {
     'aesthetic': '../assets/eval_simple_animals.txt', 
@@ -17,9 +17,6 @@ _SCORERS = {
     # 'imagereward': '../assets/hps_v2_all_eval.txt', 
     # 'pickscore': '../assets/hps_v2_all_eval.txt'
 }
-
-st = 1.0
-et = 0.0
 
 def create_function():
 
@@ -180,15 +177,15 @@ def create_function():
                                 
             elif method in ['code_grad']:
 
-                for num_samples in [40]: #[10, 20, 30, 40]: # [10, 20, 30, 40]:
+                for num_samples in [4]: #[10, 20, 30, 40]: # [10, 20, 30, 40]:
 
                     for block_size in [5]: # [5, 10, 20, 50, 100]
                         
                         st = 0.7
                         et = 0.3
-                        for guidance_scale in [0.5]: # [0.5,1,10,15]
+                        for guidance_scale in [0.3]: # [0.5,1,10,15]
 
-                            for prompt_idx in range(num_prompts)[1:]:
+                            for prompt_idx in range(num_prompts):
 
                                 if scorer in ['facedetector', 'styletransfer', 'strokegen']:
                                     for target_idx in range(num_targets):
@@ -219,8 +216,8 @@ def create_function():
                                     curr_config.guidance.block_size = block_size
                                     curr_config.guidance.prompt_idxs = [prompt_idx]
                                     curr_config.guidance.guidance_scale = float(guidance_scale)
-                                    curr_config.guidance.num_images_per_prompt = 4
-                                    curr_config.guidance.num_gen_target_images_per_prompt = 4
+                                    curr_config.guidance.num_images_per_prompt = 5
+                                    curr_config.guidance.num_gen_target_images_per_prompt = 5
                                     curr_config.guidance.start_time = float(st)
                                     curr_config.guidance.end_time = float(et)
                                     if "target_idxs" in curr_config.guidance:
@@ -315,11 +312,13 @@ def create_function():
                             savepath = curr_path.joinpath(f'{filename}.yaml')
                             OmegaConf.save(curr_config, savepath)
 
-            elif method == 'grad' or method == 'grad_fixed':
+            elif method == 'grad' or method == 'grad_fixed' or method == 'grad_fixed_mpgd':
             
-                for guidance_scale in [0.5,0.75,0.9,1.0]: # np.arange(100, 600, 100): # [25, 50, 100, 200, 500]:
+                for guidance_scale in [15]: # np.arange(100, 600, 100): # [25, 50, 100, 200, 500]:
 
-                    for prompt_idx in range(num_prompts):
+                    for prompt_idx in range(num_prompts)[0:1]:
+                        st = 0.7
+                        et = 0.3
 
                         if scorer in ['facedetector', 'styletransfer', 'strokegen']:
                             for target_idx in range(num_targets):
@@ -340,7 +339,7 @@ def create_function():
 
                         else:
                             curr_config = copy.deepcopy(template)
-                            curr_config.project.name = f'{method}{int(float(round(guidance_scale,1))*10)}_{scorer}/st{int(float(round(curr_config.guidance.start_time,1))*10)}_et{int(float(round(curr_config.guidance.end_time,1))*10)}'
+                            curr_config.project.name = f'{method}{int(float(round(guidance_scale,1))*10)}_{scorer}/st{int(float(round(st,1))*10)}_et{int(float(round(et,1))*10)}'
                             curr_config.project.promptspath = _SCORERS[scorer]
 
                             curr_config.guidance.method = method
@@ -349,8 +348,8 @@ def create_function():
                             curr_config.guidance.prompt_idxs = [prompt_idx]
                             del(curr_config.guidance["target_idxs"])
                             
-                            curr_config.guidance.start_time = st
-                            curr_config.guidance.end_time = et
+                            curr_config.guidance.start_time = float(st)
+                            curr_config.guidance.end_time = float(et)
                             
                             filename = f'{method}{int(float(round(guidance_scale,1))*10)}_p{prompt_idx}_{scorer}_st{int(float(round(curr_config.guidance.start_time,1))*10)}_et{int(float(round(curr_config.guidance.end_time,1))*10)}'
                             savepath = curr_path.joinpath(f'{filename}.yaml')

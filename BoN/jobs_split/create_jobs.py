@@ -50,7 +50,7 @@ def main():
 
     for method in methods:
 
-        if method.stem not in ['code']:
+        if method.stem not in ['grad_fixed_mpgd']: # 'code_grad'
             continue
 
         curr_path = Path(method.stem)

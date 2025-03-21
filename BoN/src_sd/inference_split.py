@@ -33,6 +33,7 @@ from pipelines import (
     GradCoDeSDPipelineI2I,
     GradSDPipeline_fixed,
     CoDeGradSD,
+    GradSDPipeline_fixed_mpgd,
     prepare_image, 
     encode
 )
@@ -115,6 +116,12 @@ def run_experiment(config):
             model_id, torch_dtype=torch.float16).to(device)
         pipe.set_guidance(config.guidance.guidance_scale)
     elif config.guidance.method == 'grad_fixed':
+        pipe = GradSDPipeline_fixed.from_pretrained(
+            model_id, torch_dtype=torch.float16).to(device)
+        pipe.set_guidance(config.guidance.guidance_scale)
+        pipe.set_start_time(config.guidance.start_time)
+        pipe.set_end_time(config.guidance.end_time)
+    elif config.guidance.method == 'grad_fixed_mpgd':
         pipe = GradSDPipeline_fixed.from_pretrained(
             model_id, torch_dtype=torch.float16).to(device)
         pipe.set_guidance(config.guidance.guidance_scale)
