@@ -16,7 +16,7 @@ from tqdm.auto import tqdm
 from diffusers import StableDiffusionPipeline
 from diffusers.pipelines.stable_diffusion import StableDiffusionPipelineOutput
 from typing import Union, Optional, List, Callable, Dict, Any, Tuple
-from scorers import HPSScorer, AestheticScorer, FaceRecognitionScorer, ClipScorer
+from scorers import HPSScorer, AestheticScorer, FaceRecognitionScorer, ClipScorer, PickScoreScorer
 from diffusers.schedulers.scheduling_ddpm import DDPMSchedulerOutput, DDPMScheduler
 
 class GradSDPipeline_fixed(StableDiffusionPipeline):
@@ -213,30 +213,21 @@ class GradSDPipeline_fixed(StableDiffusionPipeline):
 
                 # prev_timestep = t - self.scheduler.config.num_train_timesteps // self.scheduler.num_inference_steps
 
+                curr_samples = self.scheduler.step(noise_pred, t, curr_samples, **extra_step_kwargs).prev_sample
+                prev_timestep = t - self.scheduler.config.num_train_timesteps // self.scheduler.num_inference_steps
                 # gradient guidance norm
-                if(getattr(self, 'start_time', None) is not None):
-                    if(t<self.start_time*1000 and t>=self.end_time*1000): 
-                        sqrt_1minus_alpha_t = (1 - self.scheduler.alphas_cumprod[t] ) **0.5
-                        grad = self.target_guidance * self.compute_gradient(curr_samples, prompt, noise_pred, t)
-
-                        # noise_pred -= sqrt_1minus_alpha_t * self.target_guidance * grad 
-
-                        curr_samples = self.scheduler.step(noise_pred, t, curr_samples, **extra_step_kwargs).prev_sample
-                        curr_samples = curr_samples + grad
-                        
-                        prev_timestep = t - self.scheduler.config.num_train_timesteps // self.scheduler.num_inference_steps
-                    else:
-                        curr_samples = self.scheduler.step(noise_pred, t, curr_samples, **extra_step_kwargs).prev_sample
-                else:
-                    sqrt_1minus_alpha_t = (1 - self.scheduler.alphas_cumprod[t] ) **0.5
-                    grad = self.target_guidance * self.compute_gradient(curr_samples, prompt, noise_pred, t)
-
+                if((i+1)%block_size == 0 and t<=self.start_time*1000 and t>=self.end_time*1000 and self.target_guidance > 0.0): 
+                    # sqrt_1minus_alpha_t = (1 - self.scheduler.alphas_cumprod[t] ) **0.5
+                    grad = self.compute_gradient(curr_samples, prompt, noise_pred, t)
+                    correction = (noise_pred_text - noise_pred_uncond)
+                    grad_norm = (grad * grad).mean().sqrt().item()
+                    target_guidance = (correction * correction).mean().sqrt().item() * guidance_scale / (grad_norm + 1e-8) * self.target_guidance 
+                    if target_guidance > 150.0: target_guidance = 150.0
+                    # print(f"t: {t.item()}, the target_guidance is {target_guidance} the grad norm is {grad_norm}")
+                    curr_samples = curr_samples + target_guidance*grad
                     # noise_pred -= sqrt_1minus_alpha_t * self.target_guidance * grad 
+                    # curr_samples = curr_samples + grad
 
-                    curr_samples = self.scheduler.step(noise_pred, t, curr_samples, **extra_step_kwargs).prev_sample
-                    curr_samples = curr_samples + grad
-                    
-                    prev_timestep = t - self.scheduler.config.num_train_timesteps // self.scheduler.num_inference_steps
                 print(t.item())
                                 
             rewards = []
@@ -337,59 +328,48 @@ class GradSDPipeline_fixed(StableDiffusionPipeline):
     @torch.enable_grad()
     def compute_gradient(self, latents, prompt, noise_pred, t):
 
-        ##### Debugging
-        # extra_step_kwargs = self.prepare_extra_step_kwargs(None, 0.0)
-        # pred_original_sample = self.scheduler.step(noise_pred, t, latents, **extra_step_kwargs).pred_original_sample
-        
-        # decoded_latents = self.decode_latents(latents)
-        # image_pils = self.numpy_to_pil(decoded_latents)
-
-        # savepath = Path(self.path.joinpath(prompt))
-        # if not Path.exists(savepath):
-        #     Path.mkdir(savepath, exist_ok=True, parents=True)
-
-        # for idx in range(len(image_pils)):
-        #     image_pils[idx].save(savepath.joinpath(f"{t}.png"))
-        # ##### Debugging
-
+                # print(f"The shape of the latents is {latents.shape} ")
+        # Enable gradient computation for latents
         latent_in = latents.detach().requires_grad_(True)
-
-        pred_original_sample = predict_x0_from_xt(
-                            self.scheduler,
-                            noise_pred,   # (2,4,64,64),
-                            t,
-                            latent_in
-                        )      
         
-        im_pix_un = self.vae.decode(pred_original_sample.to(self.vae.dtype) / self.vae.config.scaling_factor).sample
-        im_pix = ((im_pix_un / 2) + 0.5).clamp(0, 1).to(torch.float).cpu()
-
-        ##### Debugging
-        # image_pils = self.numpy_to_pil(im_pix.detach().permute(0, 2, 3, 1).float().numpy())
-
-        # savepath = Path(self.path.joinpath(prompt))
-        # if not Path.exists(savepath):
-        #     Path.mkdir(savepath, exist_ok=True, parents=True)
-
-        # for idx in range(len(image_pils)):
-        #     image_pils[idx].save(savepath.joinpath(f"{t}.png"))
-        # ##### Debugging
-
-        if isinstance(self.scorer, HPSScorer):
+        # Get predictions for the full batch
+        pred_original_sample = predict_x0_from_xt(
+            self.scheduler,
+            noise_pred,
+            t,
+            latent_in
+        )
+        # print(f"The shape of the pred noise is {noise_pred.shape}")
+        
+        # print(f"The shape of the predicted original sample is: {pred_original_sample.shape}")
+        
+        # Decode to image space with mixed precision to save memory
+        # with torch.cuda.amp.autocast():
+        im_pix_un = self.vae.decode(
+            pred_original_sample.to(self.vae.dtype) / self.vae.config.scaling_factor
+        ).sample
             
+        # Process images
+        im_pix = ((im_pix_un / 2) + 0.5).clamp(0, 1).cpu()
+        # print(im_pix.shape)
+        
+        # Compute rewards/loss based on scorer type
+        if isinstance(self.scorer, (HPSScorer,PickScoreScorer)):
             prompts = [prompt] * len(im_pix)
             rewards = -1 * self.scorer.loss_fn(im_pix, prompts)
-
-        elif isinstance(self.scorer, FaceRecognitionScorer) or\
-              isinstance(self.scorer, ClipScorer):
-            
+        elif isinstance(self.scorer, (FaceRecognitionScorer, ClipScorer)):
             rewards = -1 * self.scorer.loss_fn(im_pix, self.target_img)
         else:
             rewards = -1 * self.scorer.loss_fn(im_pix)
-
+            
+        # Compute gradient
         grad = torch.autograd.grad(rewards.sum(), latent_in)[0]
-        norm_grad = grad / rewards.norm(p=1)
-        return norm_grad.clone().cuda()
+        
+        # Clean up to free memory
+        del im_pix_un, im_pix, rewards
+        torch.cuda.empty_cache()
+        
+        return grad.cuda().clone()
 
 def predict_x0_from_xt(
     self: DDPMScheduler,

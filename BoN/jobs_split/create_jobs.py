@@ -50,7 +50,7 @@ def main():
 
     for method in methods:
 
-        if method.stem not in ['grad_fixed_mpgd']: # 'code_grad'
+        if method.stem not in ['code_grad']: # 'code_grad', 'uncond'
             continue
 
         curr_path = Path(method.stem)
@@ -62,9 +62,11 @@ def main():
         configs = [x for x in method.iterdir() if x.is_file()]
         # breakpoint()
         for config in configs:   
-            # if ('aesthetic' in config.stem) or ('style' in config.stem) or ('style' in config.stem):
-            #     continue
+            if  ('pickscore' not in config.stem) or ('st7' not in config.stem) or ('et3' not in config.stem) or ('gs2' not in config.stem):
+                continue
             # if ('compress' in config.stem) or ('stroke' in config.stem):
+            #     continue
+            # if 'code1_' not in config.stem and 'gs3' not in config.stem:
             #     continue
             print(config.stem)
             create_job_file(config.stem, curr_path)

@@ -5,17 +5,17 @@ import numpy as np
 from pathlib import Path
 from omegaconf import OmegaConf
 
-_METHODS = ['grad_fixed_mpgd'] # ['c_bon', 'i2i'] # 'ibon', ibon_i2i', 'bon', 'uncond', 'i2i', 'bon_i2i', 'code', 'c_code', 'grad_i2i_mpgd', 'grad', 'code_grad', 'code', 'code_grad'
+_METHODS = ['code_grad'] # ['c_bon', 'i2i'] # 'ibon', ibon_i2i', 'bon', 'uncond', 'i2i', 'bon_i2i', 'code', 'c_code', 'grad_i2i_mpgd', 'grad', 'code_grad', 'code', 'code_grad'
 
 _SCORERS = {
-    'aesthetic': '../assets/eval_simple_animals.txt', 
+    # 'aesthetic': '../assets/eval_simple_animals.txt', 
     # 'hpsv2': '../assets/hps_v2_all_eval.txt', 
     # 'facedetector': '../assets/face.txt', 
     # 'styletransfer': '../assets/style.txt',
     # 'strokegen': '../assets/stroke.txt',
     # 'compress': '../assets/compressibility.txt',
     # 'imagereward': '../assets/hps_v2_all_eval.txt', 
-    # 'pickscore': '../assets/hps_v2_all_eval.txt'
+    'pickscore': '../assets/hps_v2_all_eval.txt'
 }
 
 def create_function():
@@ -35,11 +35,11 @@ def create_function():
         for scorer in _SCORERS.keys():
 
             num_prompts = 6 #if scorer == 'facedetector' else 4
-            num_targets = 3 # if scorer == 'strokegen' else 3
+            num_targets = 1 # if scorer == 'strokegen' else 3
 
             print(f'{method} {scorer}')
 
-            if method == 'uncond':
+            if method == 'uncond' or method=='uncond2':
 
                 for prompt_idx in range(num_prompts):
 
@@ -53,8 +53,15 @@ def create_function():
                         curr_config.guidance.scorer = scorer
                         curr_config.guidance.target_idxs = [target_idx]
                         curr_config.guidance.prompt_idxs = [prompt_idx]
+                        if "target_idxs" in curr_config.guidance:
+                            del curr_config.guidance["target_idxs"]
+                        curr_config.guidance.block_size = 5
+                        curr_config.guidance.num_images_per_prompt = 5
+                        curr_config.guidance.num_gen_target_images_per_prompt = 5
+                        
 
-                        filename = f'{method}_p{prompt_idx}_t{target_idx}_{scorer}'
+                        filename = f'{method}_p{prompt_idx}_{scorer}'
+                        # filename = f'{method}_p{prompt_idx}_t{target_idx}_{scorer}'
                         savepath = curr_path.joinpath(f'{filename}.yaml')
                         OmegaConf.save(curr_config, savepath)
             
@@ -134,6 +141,51 @@ def create_function():
                                 
             elif method in ['code']:
 
+                for num_samples in [4]: #[10, 20, 30, 40]: # [10, 20, 30, 40]:
+
+                    for block_size in [5]: # [5, 10, 20, 50, 100]
+
+                        for prompt_idx in range(num_prompts):
+
+                            if scorer in ['facedetector', 'styletransfer', 'strokegen']:
+                                for target_idx in range(num_targets):
+
+                                    curr_config = copy.deepcopy(template)
+                                    curr_config.project.name = f'{method}{num_samples}_b{block_size}_{scorer}'
+                                    curr_config.project.promptspath = _SCORERS[scorer]
+
+                                    curr_config.guidance.method = method
+                                    curr_config.guidance.scorer = scorer
+                                    curr_config.guidance.num_samples = num_samples
+                                    curr_config.guidance.block_size = block_size
+                                    curr_config.guidance.target_idxs = [target_idx]
+                                    curr_config.guidance.prompt_idxs = [prompt_idx]
+
+                                    filename = f'{method}{num_samples}_p{prompt_idx}_t{target_idx}_b{block_size}_{scorer}'
+                                    savepath = curr_path.joinpath(f'{filename}.yaml')
+                                    OmegaConf.save(curr_config, savepath)
+
+                            else:
+                                curr_config = copy.deepcopy(template)
+                                curr_config.project.name = f'{method}{num_samples}_b{block_size}_{scorer}'
+                                curr_config.project.promptspath = _SCORERS[scorer]
+
+                                curr_config.guidance.method = method
+                                curr_config.guidance.scorer = scorer
+                                curr_config.guidance.num_samples = num_samples
+                                curr_config.guidance.block_size = block_size
+                                curr_config.guidance.prompt_idxs = [prompt_idx]
+                                curr_config.guidance.num_images_per_prompt = 5
+                                curr_config.guidance.num_gen_target_images_per_prompt = 5
+                                if "target_idxs" in curr_config.guidance:
+                                    del curr_config.guidance["target_idxs"]
+
+                                filename = f'{method}{num_samples}_p{prompt_idx}_b{block_size}_{scorer}'
+                                savepath = curr_path.joinpath(f'{filename}.yaml')
+                                OmegaConf.save(curr_config, savepath)
+                                
+            elif method in ['code_ext']:
+
                 for num_samples in [40]: #[10, 20, 30, 40]: # [10, 20, 30, 40]:
 
                     for block_size in [5]: # [5, 10, 20, 50, 100]
@@ -168,6 +220,8 @@ def create_function():
                                 curr_config.guidance.num_samples = num_samples
                                 curr_config.guidance.block_size = block_size
                                 curr_config.guidance.prompt_idxs = [prompt_idx]
+                                curr_config.guidance.num_images_per_prompt = 5
+                                curr_config.guidance.num_gen_target_images_per_prompt = 5
                                 if "target_idxs" in curr_config.guidance:
                                     del curr_config.guidance["target_idxs"]
 
@@ -175,7 +229,7 @@ def create_function():
                                 savepath = curr_path.joinpath(f'{filename}.yaml')
                                 OmegaConf.save(curr_config, savepath)
                                 
-            elif method in ['code_grad']:
+            elif method in ['code_grad','code_grad_new','code_grad_new_variant']:
 
                 for num_samples in [4]: #[10, 20, 30, 40]: # [10, 20, 30, 40]:
 
@@ -183,7 +237,8 @@ def create_function():
                         
                         st = 0.7
                         et = 0.3
-                        for guidance_scale in [0.3]: # [0.5,1,10,15]
+                        
+                        for guidance_scale in [0.2]: # [0.5,1,10,15]
 
                             for prompt_idx in range(num_prompts):
 
@@ -207,7 +262,7 @@ def create_function():
 
                                 else:
                                     curr_config = copy.deepcopy(template)
-                                    curr_config.project.name = f'{method}{num_samples}_b{block_size}_{scorer}_gs{int(float(round(guidance_scale,1))*10)}'
+                                    curr_config.project.name = f'{method}{num_samples}_b{block_size}_st{int(st*10)}_et{int(et*10)}_{scorer}_gs{int(guidance_scale*10)}'
                                     curr_config.project.promptspath = _SCORERS[scorer]
 
                                     curr_config.guidance.method = method
@@ -223,10 +278,64 @@ def create_function():
                                     if "target_idxs" in curr_config.guidance:
                                         del curr_config.guidance["target_idxs"]
 
-                                    filename = f'{method}{num_samples}_p{prompt_idx}_b{block_size}_{scorer}_gs{int(float(round(guidance_scale,1))*10)}'
+                                    filename = f'{method}{num_samples}_p{prompt_idx}_b{block_size}_{scorer}_st{int(st*10)}_et{int(et*10)}_gs{int(float(guidance_scale)*10)}'
                                     savepath = curr_path.joinpath(f'{filename}.yaml')
                                     OmegaConf.save(curr_config, savepath)
 
+            elif method in ['code_grad_ext']:
+
+                for num_samples in [4]: #[10, 20, 30, 40]: # [10, 20, 30, 40]:
+
+                    for block_size in [5]: # [5, 10, 20, 50, 100]
+                        
+                        st = 1.0
+                        et = 0.3
+                        for grad_block_size in [4]:
+
+                            for guidance_scale in [0.3]: # [0.5,1,10,15]
+
+                                for prompt_idx in range(num_prompts):
+
+                                    if scorer in ['facedetector', 'styletransfer', 'strokegen']:
+                                        for target_idx in range(num_targets):
+
+                                            curr_config = copy.deepcopy(template)
+                                            curr_config.project.name = f'{method}{num_samples}_b{block_size}_{scorer}'
+                                            curr_config.project.promptspath = _SCORERS[scorer]
+
+                                            curr_config.guidance.method = method
+                                            curr_config.guidance.scorer = scorer
+                                            curr_config.guidance.num_samples = num_samples
+                                            curr_config.guidance.block_size = block_size
+                                            curr_config.guidance.target_idxs = [target_idx]
+                                            curr_config.guidance.prompt_idxs = [prompt_idx]
+
+                                            filename = f'{method}{num_samples}_p{prompt_idx}_t{target_idx}_b{block_size}_{scorer}'
+                                            savepath = curr_path.joinpath(f'{filename}.yaml')
+                                            OmegaConf.save(curr_config, savepath)
+
+                                    else:
+                                        curr_config = copy.deepcopy(template)
+                                        curr_config.project.name = f'{method}{num_samples}_b{block_size}_gb{grad_block_size}_st{int(st*10)}_et{int(et*10)}_{scorer}_gs{int(guidance_scale*10)}'
+                                        curr_config.project.promptspath = _SCORERS[scorer]
+
+                                        curr_config.guidance.method = method
+                                        curr_config.guidance.scorer = scorer
+                                        curr_config.guidance.num_samples = num_samples
+                                        curr_config.guidance.block_size = block_size
+                                        curr_config.guidance.grad_block_size = grad_block_size
+                                        curr_config.guidance.prompt_idxs = [prompt_idx]
+                                        curr_config.guidance.guidance_scale = float(guidance_scale)
+                                        curr_config.guidance.num_images_per_prompt = 5
+                                        curr_config.guidance.num_gen_target_images_per_prompt = 5
+                                        curr_config.guidance.start_time = float(st)
+                                        curr_config.guidance.end_time = float(et)
+                                        if "target_idxs" in curr_config.guidance:
+                                            del curr_config.guidance["target_idxs"]
+
+                                        filename = f'{method}{num_samples}_p{prompt_idx}_b{block_size}_gb{grad_block_size}_{scorer}_st{int(st*10)}_et{int(et*10)}_gs{int(float(guidance_scale)*10)}'
+                                        savepath = curr_path.joinpath(f'{filename}.yaml')
+                                        OmegaConf.save(curr_config, savepath)
 
 
             elif method == 'bon':
@@ -312,13 +421,13 @@ def create_function():
                             savepath = curr_path.joinpath(f'{filename}.yaml')
                             OmegaConf.save(curr_config, savepath)
 
-            elif method == 'grad' or method == 'grad_fixed' or method == 'grad_fixed_mpgd':
+            elif method == 'grad' or method == 'grad_fixed_mpgd':
             
-                for guidance_scale in [15]: # np.arange(100, 600, 100): # [25, 50, 100, 200, 500]:
+                for guidance_scale in [0.3]: # np.arange(100, 600, 100): # [25, 50, 100, 200, 500]:
 
-                    for prompt_idx in range(num_prompts)[0:1]:
-                        st = 0.7
-                        et = 0.3
+                    for prompt_idx in range(num_prompts):
+                        st = 0.6
+                        et = 0.2
 
                         if scorer in ['facedetector', 'styletransfer', 'strokegen']:
                             for target_idx in range(num_targets):
@@ -339,7 +448,7 @@ def create_function():
 
                         else:
                             curr_config = copy.deepcopy(template)
-                            curr_config.project.name = f'{method}{int(float(round(guidance_scale,1))*10)}_{scorer}/st{int(float(round(st,1))*10)}_et{int(float(round(et,1))*10)}'
+                            curr_config.project.name = f'{method}_p{prompt_idx}_st{int(st*10)}_et{int(et*10)}_{scorer}_gs{int(guidance_scale*10)})'
                             curr_config.project.promptspath = _SCORERS[scorer]
 
                             curr_config.guidance.method = method
@@ -348,13 +457,110 @@ def create_function():
                             curr_config.guidance.prompt_idxs = [prompt_idx]
                             del(curr_config.guidance["target_idxs"])
                             
+                            curr_config.guidance.num_images_per_prompt = 5
+                            curr_config.guidance.num_gen_target_images_per_prompt = 5
+                            
                             curr_config.guidance.start_time = float(st)
                             curr_config.guidance.end_time = float(et)
                             
-                            filename = f'{method}{int(float(round(guidance_scale,1))*10)}_p{prompt_idx}_{scorer}_st{int(float(round(curr_config.guidance.start_time,1))*10)}_et{int(float(round(curr_config.guidance.end_time,1))*10)}'
+                            filename = f'{method}_p{prompt_idx}_st{int(st*10)}_et{int(et*10)}_{scorer}_gs{int(guidance_scale*10)}'
                             savepath = curr_path.joinpath(f'{filename}.yaml')
                             OmegaConf.save(curr_config, savepath)
 
+            elif method == 'grad_fixed':
+                for block_size in [5]: # [5, 10, 20, 50, 100]
+                    for guidance_scale in [0.3]: # np.arange(100, 600, 100): # [25, 50, 100, 200, 500]:
+
+                        for prompt_idx in range(num_prompts):
+                            st = 0.6
+                            et = 0.2
+
+                            if scorer in ['facedetector', 'styletransfer', 'strokegen']:
+                                for target_idx in range(num_targets):
+
+                                    curr_config = copy.deepcopy(template)
+                                    curr_config.project.name = f'{method}{int(float(round(guidance_scale,1))*10)}_{scorer}'
+                                    curr_config.project.promptspath = _SCORERS[scorer]
+
+                                    curr_config.guidance.method = method
+                                    curr_config.guidance.scorer = scorer
+                                    curr_config.guidance.guidance_scale = float(guidance_scale)
+                                    curr_config.guidance.target_idxs = [target_idx]
+                                    curr_config.guidance.prompt_idxs = [prompt_idx]
+                                    
+                                    filename = f'{method}{int(float(round(guidance_scale,1))*10)}_p{prompt_idx}_t{target_idx}_{scorer}'
+                                    savepath = curr_path.joinpath(f'{filename}.yaml')
+                                    OmegaConf.save(curr_config, savepath)
+
+                            else:
+                                curr_config = copy.deepcopy(template)
+                                curr_config.project.name = f'{method}_b{block_size}_st{int(st*10)}_et{int(et*10)}_{scorer}_gs{int(guidance_scale*10)}'
+                                curr_config.project.promptspath = _SCORERS[scorer]
+                                
+                                curr_config.guidance.block_size = block_size
+                                curr_config.guidance.method = method
+                                curr_config.guidance.scorer = scorer
+                                curr_config.guidance.guidance_scale = float(guidance_scale)
+                                curr_config.guidance.prompt_idxs = [prompt_idx]
+                                del(curr_config.guidance["target_idxs"])
+                                
+                                curr_config.guidance.num_images_per_prompt = 5
+                                curr_config.guidance.num_gen_target_images_per_prompt = 5
+                                
+                                curr_config.guidance.start_time = float(st)
+                                curr_config.guidance.end_time = float(et)
+                                
+                                filename = f'{method}_p{prompt_idx}_b{block_size}_st{int(st*10)}_et{int(et*10)}_{scorer}_gs{int(guidance_scale*10)}'
+                                savepath = curr_path.joinpath(f'{filename}.yaml')
+                                OmegaConf.save(curr_config, savepath)
+                            
+            elif method == 'grad_fixed_new':
+                for guidance_scale in [0.3]: # np.arange(100, 600, 100): # [25, 50, 100, 200, 500]:
+
+                    for prompt_idx in range(num_prompts):
+                        st = 0.6
+                        et = 0.2
+
+                        if scorer in ['facedetector', 'styletransfer', 'strokegen']:
+                            for target_idx in range(num_targets):
+
+                                curr_config = copy.deepcopy(template)
+                                curr_config.project.name = f'{method}{int(float(round(guidance_scale,1))*10)}_{scorer}'
+                                curr_config.project.promptspath = _SCORERS[scorer]
+
+                                curr_config.guidance.method = method
+                                curr_config.guidance.scorer = scorer
+                                curr_config.guidance.guidance_scale = float(guidance_scale)
+                                curr_config.guidance.target_idxs = [target_idx]
+                                curr_config.guidance.prompt_idxs = [prompt_idx]
+                                
+                                filename = f'{method}{int(float(round(guidance_scale,1))*10)}_p{prompt_idx}_t{target_idx}_{scorer}'
+                                savepath = curr_path.joinpath(f'{filename}.yaml')
+                                OmegaConf.save(curr_config, savepath)
+
+                        else:
+                            curr_config = copy.deepcopy(template)
+                            curr_config.project.name = f'{method}_st{int(st*10)}_et{int(et*10)}_{scorer}_gs{int(guidance_scale*10)}'
+                            curr_config.project.promptspath = _SCORERS[scorer]
+                            
+                            curr_config.guidance.block_size = 5
+                            curr_config.guidance.method = method
+                            curr_config.guidance.scorer = scorer
+                            curr_config.guidance.num_inference_steps = 100
+                            curr_config.guidance.guidance_scale = float(guidance_scale)
+                            curr_config.guidance.prompt_idxs = [prompt_idx]
+                            del(curr_config.guidance["target_idxs"])
+                            
+                            curr_config.guidance.num_images_per_prompt = 5
+                            curr_config.guidance.num_gen_target_images_per_prompt = 5
+                            
+                            curr_config.guidance.start_time = float(st)
+                            curr_config.guidance.end_time = float(et)
+                            
+                            filename = f'{method}_p{prompt_idx}_st{int(st*10)}_et{int(et*10)}_{scorer}_gs{int(guidance_scale*10)}'
+                            savepath = curr_path.joinpath(f'{filename}.yaml')
+                            OmegaConf.save(curr_config, savepath)
+                            
             elif method == 'grad_i2i' or method == 'grad_i2i_mpgd':
                 for prompt_idx in range(num_prompts)[-1:]:
 

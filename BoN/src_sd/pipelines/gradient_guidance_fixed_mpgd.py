@@ -215,11 +215,10 @@ class GradSDPipeline_fixed_mpgd(StableDiffusionPipeline):
                 # prev_timestep = t - self.scheduler.config.num_train_timesteps // self.scheduler.num_inference_steps
 
                 # gradient guidance norm
-                curr_samples = self.scheduler.step(noise_pred, t, curr_samples, **extra_step_kwargs).prev_sample
                 if(getattr(self, 'start_time', None) is not None):
                     if(t<self.start_time*1000 and t>=self.end_time*1000): 
                         sqrt_1minus_alpha_t = (1 - self.scheduler.alphas_cumprod[t] ) **0.5
-                        prev_timestep = t - self.scheduler.config.num_train_timesteps // self.scheduler.num_inference_step
+                        prev_timestep = t - self.scheduler.config.num_train_timesteps // self.scheduler.num_inference_steps
                         predicted_x0 = self.compute_gradient(curr_samples, prompt, noise_pred, t,correction, guidance_scale)
                         
                         curr_samples = self.scheduler.add_noise(predicted_x0,noise_pred,prev_timestep)
@@ -228,7 +227,28 @@ class GradSDPipeline_fixed_mpgd(StableDiffusionPipeline):
 
                         # curr_samples = self.scheduler.step(noise_pred, t, curr_samples, **extra_step_kwargs).prev_sample
                         # curr_samples = curr_samples + grad
+                    else:
+                        curr_samples = self.scheduler.step(noise_pred, t, curr_samples, **extra_step_kwargs).prev_sample
                         
+                ## DEBUGGING
+                ## ----
+                pred_original_sample = predict_x0_from_xt(
+                        self.scheduler,
+                        noise_pred,   # (1,4,64,64),
+                        t,
+                        curr_samples
+                )  
+                im_pix_un = self.vae.decode(pred_original_sample.to(self.vae.dtype) / self.vae.config.scaling_factor).sample
+                im_pix = ((im_pix_un / 2) + 0.5).clamp(0, 1).to(torch.float).cpu()
+                
+                image_pils = self.numpy_to_pil(im_pix.permute(0, 2, 3, 1)[0].detach().numpy())
+                savepath = Path(self.path.joinpath(prompt))
+                if not Path.exists(savepath):
+                    Path.mkdir(savepath, exist_ok=True, parents=True)
+
+                for idx in range(len(image_pils)):
+                    image_pils[idx].save(savepath.joinpath(f"{t}_curr_sample.png"))
+                ## ----
 
                 print(t.item())
                                 
@@ -385,7 +405,7 @@ class GradSDPipeline_fixed_mpgd(StableDiffusionPipeline):
         with torch.no_grad():
             # Apply gradient step in pixel space
             target_guidance = (correction * correction).mean().sqrt().item() * guidance_scale / (grad * grad).mean().sqrt().item() * self.target_guidance 
-            print(target_guidance)
+            # print(target_guidance)
             guided_orig = pred_original_sample + target_guidance * grad
             
         return guided_orig.clone().cuda()

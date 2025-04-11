@@ -6,7 +6,7 @@ from PIL import Image
 from tqdm.auto import tqdm
 from pathlib import Path
 
-_SCORERS = ['strokegen', 'facedetector'] # ['strokegen', 'facedetector', 'styletransfer']
+_SCORERS = ['aesthetic'] # ['strokegen', 'facedetector', 'styletransfer'] 'strokegen', 'facedetector'
 
 _MAP_UG = {
     'styletransfer': {
@@ -28,14 +28,14 @@ def main():
                     else Path('/tudelft.net/staff-umbrella/StudentsCVlab/mgoyal/CoDe_ext')
                     # else Path('/home/sayak/Projects/PhD_GuidedDiff')
     outputs_path = Path('/glb/data/ptxd_dash/nlasqh/PhD_GuidedDiff/BoN/outputs') if "housky" in currhost\
-                    else Path('/tudelft.net/staff-umbrella/StudentsCVlab/mgoyal/CoDe_ext/BoN/outputs_img_abla')
+                    else Path('/tudelft.net/staff-umbrella/StudentsCVlab/mgoyal/CoDe_ext/BoN/outputs')
                     # else Path('/home/sayak/Projects/PhD_GuidedDiff/BoN/outputs_img_abla')
 
     
     # Load unconditional rewards
     # breakpoint()
     uncond_rewards = dict()
-    _SCORERS = ['strokegen', 'facedetector'] # ['strokegen', 'facedetector', 'styletransfer']
+    # _SCORERS = ['pickscore'] # ['strokegen', 'facedetector', 'styletransfer'] 'strokegen', 'facedetector'
     for scorer in _SCORERS:
 
         scorer_path = outputs_path.joinpath(f'uncond_{scorer}')
@@ -46,7 +46,8 @@ def main():
         for target_dir in target_dirs:
             uncond_rewards[scorer][target_dir.stem] = dict()
 
-            prompt_dirs = [x for x in target_dir.joinpath('images').iterdir() if Path.is_dir(x)]
+            # prompt_dirs = [x for x in target_dir.joinpath('images').iterdir() if Path.is_dir(x)]
+            prompt_dirs = [x for x in target_dir.iterdir() if Path.is_dir(x)]
 
             for prompt_dir in prompt_dirs:
 
@@ -54,21 +55,33 @@ def main():
                     prompt_reward = json.load(fp)
 
                 uncond_rewards[scorer][target_dir.stem][prompt_dir.stem] = np.array(prompt_reward)
+                print(f"{prompt_dir.stem} the rewards are {prompt_reward}")
 
     # Compute scores
     perf = dict()
 
-    if Path.exists(Path('perf_ccode_b1.json')):
-        with open('perf_ccode_b1.json', 'r') as fp:
+    # name_file = 'perf_ccode_b1'
+    name_file = 'perf_code_aesthetic_final_with_DAS'
+    if Path.exists(Path(f'{name_file}.json')):
+        with open(f'{name_file}.json', 'r') as fp:
             perf = json.load(fp)
 
-    d = ['c_code_10_b1_r6_styletransfer',
-        'c_code_10_b1_r7_facedetector',
-        'c_code_20_b1_r6_styletransfer',
-        'c_code_20_b1_r7_facedetector',
-        'c_code_30_b1_r6_styletransfer',
-        'c_code_30_b1_r7_facedetector']
-    
+    # d = ['code_grad4_b5_st7_et3_aesthetic_gs0',
+    #      'code_grad4_b5_st7_et3_aesthetic_gs3',
+    #      'code_grad4_b5_st7_et3_aesthetic_gs5',
+    #      'code_grad_new4_b5_st7_et3_aesthetic_gs3',
+    #      'code_grad_new4_b5_st7_et3_aesthetic_gs5',
+    #      'code_grad_new_variant4_b5_st7_et3_aesthetic_gs3',
+    #      'code_grad_new_variant4_b5_st7_et3_aesthetic_gs5',
+    #      'code40_b5_aesthetic']
+    d = ['code_grad4_b5_st6_et2_aesthetic_gs5',
+         'code_grad1_b5_st6_et2_aesthetic_gs3',
+         'code_grad4_b5_st6_et2_aesthetic_gs3',
+         'code_grad4_b5_st7_et3_aesthetic_gs0',
+         'code40_b5_aesthetic',
+         'uncond2_aesthetic',
+         'DAS_alpha500_aesthetic',
+         'DAS_alpha1000_aesthetic']
 
     source_dirs = [x for x in outputs_path.iterdir() if Path.is_dir(x) and x.stem in d]
     # breakpoint()
@@ -91,7 +104,7 @@ def main():
         # if 'uncond2' not in source_dir.stem:
         #     continue
 
-        scorer = source_dir.stem.split('_')[-1]
+        scorer = source_dir.stem.split('_')[-1] if 'gs' not in source_dir.stem else source_dir.stem.split('_')[-2]
         # scorer = _SCORERS[-1] if 'style' == source_dir.stem.split('_')[1] else _SCORERS[0] # source_dir.stem.split('_')[-1]
 
         # scorer = source_dir.stem.split('_')[-1]
@@ -116,7 +129,8 @@ def main():
             else:
                 target_key = target_dir.stem
 
-            prompt_dirs = [x for x in target_dir.joinpath('images').iterdir() if Path.is_dir(x)]
+            # prompt_dirs = [x for x in target_dir.joinpath('images').iterdir() if Path.is_dir(x)]
+            prompt_dirs = [x for x in target_dir.iterdir() if Path.is_dir(x)]
             for prompt_dir in prompt_dirs:
 
                 if prompt_dir.stem not in uncond_rewards[scorer][target_key].keys():
@@ -128,6 +142,8 @@ def main():
 
                 with open(prompt_dir.joinpath("rewards.json"), 'r') as fp:
                     prompt_reward = json.load(fp)
+                    
+                print(f"{prompt_dir.stem} rewards are {prompt_reward}")
 
                 if len(prompt_reward) > len(uncond_rewards[scorer][target_key][prompt_dir.stem]):
                     prompt_reward = prompt_reward[:len(uncond_rewards[scorer][target_key][prompt_dir.stem])]
@@ -136,7 +152,8 @@ def main():
                 win_rate.append((np.array(prompt_reward) > uncond_rewards[scorer][target_key][prompt_dir.stem][:len(prompt_reward)]).astype(int).sum() / len(prompt_reward))
 
                 try:
-                    uncond_path_p = outputs_path.joinpath(f'uncond_{scorer}').joinpath(target_key).joinpath(f'images/{prompt_dir.stem}')
+                    # uncond_path_p = outputs_path.joinpath(f'uncond_{scorer}').joinpath(target_key).joinpath(f'images/{prompt_dir.stem}')
+                    uncond_path_p = outputs_path.joinpath(f'uncond_{scorer}').joinpath(target_key).joinpath(f'{prompt_dir.stem}')
                     out = os.popen(f"python {root_path}/pytorch-fid/src/pytorch_fid/fid_score.py '{uncond_path_p.as_posix()}' '{prompt_dir.as_posix()}'").read()
                     fids.append(float(out.split('  ')[-1].split('\n')[0]))
 
@@ -171,8 +188,8 @@ def main():
         # perf[source_dir.stem]['ref_fid'] = sum(ref_fids)/len(ref_fids)
         # perf[source_dir.stem]['ref_cmmd'] = sum(ref_cmmds)/len(ref_cmmds)
         
-        with open('perf_ccode_b1.json', 'w') as fp:
-            json.dump(perf, fp)
+        with open(f'{name_file}.json', 'w') as fp:
+            json.dump(perf, fp, indent=4)
 
 
 def ref_divs():
@@ -264,7 +281,7 @@ def create_folders():
     source_dirs = [x for x in outputs_path.iterdir() if (Path.is_dir(x) and x.stem != 'plots')]
     for source_dir in tqdm(source_dirs):
 
-        if 'code' not in source_dir.stem or 'b1_' in source_dir.stem:
+        if 'code_grad' not in source_dir.stem or 'b1_' in source_dir.stem:
             continue
 
         target_dirs = [x for x in source_dir.iterdir() if Path.is_dir(x)]

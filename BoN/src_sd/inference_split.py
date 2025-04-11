@@ -13,6 +13,7 @@ import random
 import torch
 import copy
 import numpy as np
+import time
 
 from PIL import Image
 from tqdm.auto import tqdm
@@ -29,10 +30,15 @@ from pipelines import (
     GradSDPipelineI2I,
     GradSDPipelineI2I_mpgd,
     CoDeSDPipeline,
+    CoDeSDExtensionPipeline,
     CoDeSDPipelineI2I,
     GradCoDeSDPipelineI2I,
     GradSDPipeline_fixed,
+    GradSDPipeline_fixed_new,
     CoDeGradSD,
+    CoDeGradSDExtension,
+    CoDeGradNewSD,
+    CoDeGradNewSDVariant,
     GradSDPipeline_fixed_mpgd,
     prepare_image, 
     encode
@@ -81,7 +87,7 @@ def get_parser() -> ArgumentParser:
 
 
 def run_experiment(config):
-
+    start_time = time.time()
     # Set device
     device = (
         "cuda"
@@ -108,7 +114,7 @@ def run_experiment(config):
     elif config.guidance.method == "i2i":
         pipe = SDPipelineI2I.from_pretrained(
             model_id, torch_dtype=torch.float16).to(device)
-    elif config.guidance.method == 'uncond':
+    elif config.guidance.method == 'uncond' or config.guidance.method == 'uncond2':
         pipe = UncondSDPipeline.from_pretrained(
             model_id, torch_dtype=torch.float16).to(device)
     elif config.guidance.method == 'grad':
@@ -121,8 +127,14 @@ def run_experiment(config):
         pipe.set_guidance(config.guidance.guidance_scale)
         pipe.set_start_time(config.guidance.start_time)
         pipe.set_end_time(config.guidance.end_time)
+    elif config.guidance.method == 'grad_fixed_new':
+        pipe = GradSDPipeline_fixed_new.from_pretrained(
+            model_id, torch_dtype=torch.float16).to(device)
+        pipe.set_guidance(config.guidance.guidance_scale)
+        pipe.set_start_time(config.guidance.start_time)
+        pipe.set_end_time(config.guidance.end_time)
     elif config.guidance.method == 'grad_fixed_mpgd':
-        pipe = GradSDPipeline_fixed.from_pretrained(
+        pipe = GradSDPipeline_fixed_mpgd.from_pretrained(
             model_id, torch_dtype=torch.float16).to(device)
         pipe.set_guidance(config.guidance.guidance_scale)
         pipe.set_start_time(config.guidance.start_time)
@@ -133,6 +145,25 @@ def run_experiment(config):
         pipe.set_guidance(config.guidance.guidance_scale)
         pipe.set_start_time(config.guidance.start_time)
         pipe.set_end_time(config.guidance.end_time)
+    elif config.guidance.method == 'code_grad_new':
+        pipe = CoDeGradNewSD.from_pretrained(
+            model_id, torch_dtype=torch.float16).to(device)
+        pipe.set_guidance(config.guidance.guidance_scale)
+        pipe.set_start_time(config.guidance.start_time)
+        pipe.set_end_time(config.guidance.end_time)
+    elif config.guidance.method == 'code_grad_new_variant':
+        pipe = CoDeGradNewSDVariant.from_pretrained(
+            model_id, torch_dtype=torch.float16).to(device)
+        pipe.set_guidance(config.guidance.guidance_scale)
+        pipe.set_start_time(config.guidance.start_time)
+        pipe.set_end_time(config.guidance.end_time)
+    elif config.guidance.method == 'code_grad_ext':
+        pipe = CoDeGradSDExtension.from_pretrained(
+            model_id, torch_dtype=torch.float16).to(device)
+        pipe.set_guidance(config.guidance.guidance_scale)
+        pipe.set_start_time(config.guidance.start_time)
+        pipe.set_end_time(config.guidance.end_time)
+        pipe.set_grad_block_size(config.guidance.grad_block_size)
     elif config.guidance.method == 'grad_i2i':
         pipe = GradSDPipelineI2I.from_pretrained(
             model_id, torch_dtype=torch.float16).to(device)
@@ -146,6 +177,9 @@ def run_experiment(config):
             model_id, torch_dtype=torch.float16).to(device)
     elif config.guidance.method == "code" or config.guidance.method == "code_b1":
         pipe = CoDeSDPipeline.from_pretrained(
+            model_id, torch_dtype=torch.float16).to(device)    
+    elif config.guidance.method == "code_ext" or config.guidance.method == "code_b1":
+        pipe = CoDeSDExtensionPipeline.from_pretrained(
             model_id, torch_dtype=torch.float16).to(device)    
     elif config.guidance.method == "c_grad_code"    :
         pipe = GradCoDeSDPipelineI2I.from_pretrained(
@@ -183,7 +217,7 @@ def run_experiment(config):
         scorer = ClipScorer()
     elif config.guidance.scorer == 'imagereward':
         scorer = ImageRewardScorer(device=device)
-    elif config.guidance.scorer == 'pickscorer':
+    elif config.guidance.scorer == 'pickscore':
         scorer = PickScoreScorer()
     else:
         scorer = HPSScorer()
@@ -421,7 +455,8 @@ def run_experiment(config):
                         num_try=counter
                     )
 
-
+    end_time = time.time()
+    logger.info(f'Time Taken {((end_time - start_time) / 3600.0)} hours')
         
         # elif (isinstance(scorer, AestheticScorer) or isinstance(scorer, HPSScorer)):
         #     # If target image not present for init_noise conditioning - use BoN for generating target image and then use for init_noise conditioning:

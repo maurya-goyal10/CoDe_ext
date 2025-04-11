@@ -232,13 +232,19 @@ class CoDeGradSD(StableDiffusionPipeline):
                     gen_sample = torch.cat([x.unsqueeze(0) for x in gen_sample.chunk(n_samples)], dim=0) # (n_samples, self.genbatch, 4, 64, 64)
                     gen_sample = gen_sample.permute(1,0,2,3,4)
                     curr_samples = torch.cat([x[select_ind[idx]].unsqueeze(0) for idx, x in enumerate(gen_sample)], dim=0) # TODO: Make it efficient
-
+                    # print(f"Before gradient t:{t.item()} shape of curr_samples is {curr_samples.shape} selected index is {select_ind} noise_pred shape is {noise_pred.shape} and the prompt is {prompt}")
+                    
                     if t > timesteps[-1]: # If not the end replicate n times
-                        if t<self.start_time*1000 and t>= self.end_time*1000:
-                            grad = self.compute_gradient(curr_samples, prompt, noise_pred, t)
-                            target_guidance = (correction * correction).mean().sqrt().item() * guidance_scale / (grad * grad).mean().sqrt().item() * self.target_guidance 
+                        if t<=self.start_time*1000 and t>= self.end_time*1000 and self.target_guidance > 0.0:
+                            grad = self.compute_gradient(curr_samples, prompt, noise_pred[select_ind.item()], t)
+                            correction = (noise_pred_text - noise_pred_uncond)[select_ind.item()]
+                            grad_norm = (grad * grad).mean().sqrt().item()
+                            target_guidance = (correction * correction).mean().sqrt().item() * guidance_scale / (grad_norm + 1e-8) * self.target_guidance 
+                            if target_guidance > 150.0: target_guidance = 150.0
+                            print(f"t: {t.item()}, the target_guidance is {target_guidance} the grad norm is {grad_norm}")
                             curr_samples = curr_samples + target_guidance*grad
                         curr_samples = curr_samples.repeat(n_samples, 1, 1, 1) # (n_samples, 4, 64, 64)
+                        # print(f"After gradient t:{t.item()} shape of curr_samples is {curr_samples.shape}")
 
             try:
                 self.save_outputs(curr_samples, start=(batch_iter*self.genbatch)+offset, prompt=prompt, num_try=num_try)
@@ -345,6 +351,7 @@ class CoDeGradSD(StableDiffusionPipeline):
     
     @torch.enable_grad()
     def compute_gradient(self, latents, prompt, noise_pred, t):
+        # print(f"The shape of the latents is {latents.shape} ")
         # Enable gradient computation for latents
         latent_in = latents.detach().requires_grad_(True)
         
@@ -356,17 +363,20 @@ class CoDeGradSD(StableDiffusionPipeline):
             latent_in
         )
         
+        # print(f"The shape of the predicted original sample is: {pred_original_sample.shape}")
+        
         # Decode to image space with mixed precision to save memory
-        with torch.cuda.amp.autocast():
-            im_pix_un = self.vae.decode(
-                pred_original_sample.to(self.vae.dtype) / self.vae.config.scaling_factor
-            ).sample
+        # with torch.cuda.amp.autocast():
+        im_pix_un = self.vae.decode(
+            pred_original_sample.to(self.vae.dtype) / self.vae.config.scaling_factor
+        ).sample
             
         # Process images
         im_pix = ((im_pix_un / 2) + 0.5).clamp(0, 1).cpu()
+        # print(im_pix.shape)
         
         # Compute rewards/loss based on scorer type
-        if isinstance(self.scorer, HPSScorer):
+        if isinstance(self.scorer, (HPSScorer,PickScoreScorer)):
             prompts = [prompt] * len(im_pix)
             rewards = -1 * self.scorer.loss_fn(im_pix, prompts)
         elif isinstance(self.scorer, (FaceRecognitionScorer, ClipScorer)):
@@ -404,6 +414,8 @@ def predict_x0_from_xt(
         model_output, predicted_variance = torch.split(model_output, sample.shape[1], dim=1)
     else:
         predicted_variance = None
+        
+    # print(model_output.shape)
 
     # 1. compute alphas, betas
     alpha_prod_t = self.alphas_cumprod[t]

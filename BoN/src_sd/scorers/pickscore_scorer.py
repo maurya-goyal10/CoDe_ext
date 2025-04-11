@@ -44,3 +44,10 @@ class PickScoreScorer(torch.nn.Module):
         scores = torch.diagonal(logits_per_image)
 
         return scores
+    
+    def loss_fn(self, im_pix, prompts):
+
+        scores = self.score(im_pix, prompts)
+        loss =  -1 * scores
+
+        return  loss

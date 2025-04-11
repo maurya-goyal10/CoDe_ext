@@ -8,23 +8,24 @@ import pandas as pd
 from pathlib import Path
 from tqdm.auto import tqdm
 
-_SCORERS = ['strokegen', 'facedetector'] # ['compress'] # ['strokegen', 'facedetector', 'styletransfer'] 
+_SCORERS = ['aesthetic'] # ['compress'] # ['strokegen', 'facedetector', 'styletransfer'] 
 
 def compute_clipscore():
 
     currhost = os.uname()[1]
     root_path = Path('/glb/data/ptxd_dash/nlasqh/PhD_GuidedDiff') if "housky" in currhost\
-                    # else Path('/tudelft.net/staff-bulk/ewi/insy/VisionLab/smukherjee/PhD_GuidedDiff')
                     else Path('/tudelft.net/staff-umbrella/StudentsCVlab/mgoyal/CoDe_ext')
+                    # else Path('/tudelft.net/staff-bulk/ewi/insy/VisionLab/smukherjee/PhD_GuidedDiff')
     base_path = Path('/glb/data/ptxd_dash/nlasqh/PhD_GuidedDiff/BoN') if "housky" in currhost\
-                    # else Path('/tudelft.net/staff-bulk/ewi/insy/VisionLab/smukherjee/PhD_GuidedDiff/BoN')
                     else Path('/tudelft.net/staff-umbrella/StudentsCVlab/mgoyal/CoDe_ext/BoN')
+                    # else Path('/tudelft.net/staff-bulk/ewi/insy/VisionLab/smukherjee/PhD_GuidedDiff/BoN')
                     
 
     perf = dict()
 
-    if Path.exists(base_path.joinpath('perf_ccode_b1_clipscore.json')):
-        with open(base_path.joinpath('perf_ccode_b1_clipscore.json'), 'r') as fp:
+    filename = 'perf_code_aesthetic_clipscore_final_with_DAS.json'
+    if Path.exists(base_path.joinpath(filename)):
+        with open(base_path.joinpath(filename), 'r') as fp:
             perf = json.load(fp)
 
     # Load unconditional rewards
@@ -41,13 +42,15 @@ def compute_clipscore():
         for target_dir in target_dirs:
             uncond_clipscores[scorer][target_dir.stem] = dict()
 
-            prompt_dirs = [x for x in target_dir.joinpath('images').iterdir() if Path.is_dir(x)]
+            # prompt_dirs = [x for x in target_dir.joinpath('images').iterdir() if Path.is_dir(x)]
+            prompt_dirs = [x for x in target_dir.iterdir() if Path.is_dir(x)]
 
             for prompt_dir in prompt_dirs:
 
                 if not Path.exists(prompt_dir.joinpath('clipscores.json')):
 
-                    json_path = target_dir.joinpath("images").joinpath(f"{prompt_dir.stem}.json")
+                    # json_path = target_dir.joinpath("images").joinpath(f"{prompt_dir.stem}.json")
+                    json_path = target_dir.joinpath(f"{prompt_dir.stem}.json")
                     captions = {x.stem: prompt_dir.stem for x in prompt_dir.iterdir() if x.suffix == '.png'}
                     with open(json_path, 'w') as fp:
                         json.dump(captions, fp)
@@ -77,13 +80,19 @@ def compute_clipscore():
     # source_dirs = [x for x in base_path.joinpath('outputs').iterdir()\
     #                 if (Path.is_dir(x) and x.stem != 'plots' and 'c_code_' in x.stem and 'compress' in x.stem)]
     
-    d = ['c_code_10_b1_r6_styletransfer',
-        'c_code_10_b1_r7_facedetector',
-        'c_code_20_b1_r6_styletransfer',
-        'c_code_20_b1_r7_facedetector',
-        'c_code_30_b1_r6_styletransfer',
-        'c_code_30_b1_r7_facedetector']
+    # d = ['code_grad4_b5_aesthetic_gs0',
+    #      'code_grad4_b5_aesthetic_gs3',
+    #      'code_grad4_b5_aesthetic_gs5',
+    #      'code40_b5_aesthetic']
     
+    d = ['code_grad4_b5_st6_et2_aesthetic_gs5',
+         'code_grad1_b5_st6_et2_aesthetic_gs3',
+         'code_grad4_b5_st6_et2_aesthetic_gs3',
+         'code_grad4_b5_st7_et3_aesthetic_gs0',
+         'code40_b5_aesthetic',
+         'uncond2_aesthetic',
+         'DAS_alpha500_aesthetic',
+         'DAS_alpha1000_aesthetic']
 
     source_dirs = [x for x in base_path.joinpath('outputs').iterdir() if Path.is_dir(x) and x.stem != 'plots' and x.stem in d]
 
@@ -109,7 +118,7 @@ def compute_clipscore():
         # if (source_dir.stem in perf.keys()) and ('clipwinrate' in perf[source_dir.stem].keys()):
         #         continue
 
-        scorer = source_dir.stem.split('_')[-1]
+        scorer = source_dir.stem.split('_')[-1] if 'gs' not in source_dir.stem else source_dir.stem.split('_')[-2]
 
         if scorer not in _SCORERS:
             continue
@@ -120,11 +129,14 @@ def compute_clipscore():
         target_dirs = [x for x in source_dir.iterdir() if Path.is_dir(x)]
         for target_dir in target_dirs:
 
-            prompt_dirs = [x for x in target_dir.joinpath('images').iterdir() if Path.is_dir(x)]
+            # prompt_dirs = [x for x in target_dir.joinpath('images').iterdir() if Path.is_dir(x)]
+            prompt_dirs = [x for x in target_dir.iterdir() if Path.is_dir(x)]
+            
             for prompt_dir in prompt_dirs:
                 
                 # Compute clipscores
-                json_path = target_dir.joinpath("images").joinpath(f"{prompt_dir.stem}.json")
+                # json_path = target_dir.joinpath("images").joinpath(f"{prompt_dir.stem}.json")
+                json_path = target_dir.joinpath(f"{prompt_dir.stem}.json")
                 captions = {x.stem: prompt_dir.stem for x in prompt_dir.iterdir() if x.suffix == '.png'}
                 with open(json_path, 'w') as fp:
                     json.dump(captions, fp)
@@ -153,8 +165,8 @@ def compute_clipscore():
         perf[source_dir.stem]['clipscore'] = sum(clip_scores)/len(clip_scores)
         perf[source_dir.stem]['clipwinrate'] = sum(clip_winrate)/len(clip_winrate)
 
-        with open(base_path.joinpath('perf_ccode_b1_clipscore.json'), 'w') as fp:
-            json.dump(perf, fp)
+        with open(base_path.joinpath(filename), 'w') as fp:
+            json.dump(perf, fp,indent=4)
 
 if __name__ == '__main__':
     compute_clipscore()
