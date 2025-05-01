@@ -35,6 +35,9 @@ class PickScoreScorer(torch.nn.Module):
         ).to(self.device)
         text_embeds = self.model.get_text_features(**text_inputs)
         text_embeds = text_embeds / torch.norm(text_embeds, dim=-1, keepdim=True)
+        
+        if images.min() < 0: # normalize unnormalized images
+            images = ((images / 2) + 0.5).clamp(0, 1)
 
         inputs = torchvision.transforms.Resize(self.target_size)(images)
         inputs = self.normalize(inputs).to(self.device,self.dtype)

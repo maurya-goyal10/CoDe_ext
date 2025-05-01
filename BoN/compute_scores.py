@@ -61,7 +61,7 @@ def main():
     perf = dict()
 
     # name_file = 'perf_ccode_b1'
-    name_file = 'perf_code_aesthetic_final_with_DAS'
+    name_file = 'perf_code4_sampling_comp'
     if Path.exists(Path(f'{name_file}.json')):
         with open(f'{name_file}.json', 'r') as fp:
             perf = json.load(fp)
@@ -74,14 +74,20 @@ def main():
     #      'code_grad_new_variant4_b5_st7_et3_aesthetic_gs3',
     #      'code_grad_new_variant4_b5_st7_et3_aesthetic_gs5',
     #      'code40_b5_aesthetic']
-    d = ['code_grad4_b5_st6_et2_aesthetic_gs5',
-         'code_grad1_b5_st6_et2_aesthetic_gs3',
-         'code_grad4_b5_st6_et2_aesthetic_gs3',
-         'code_grad4_b5_st7_et3_aesthetic_gs0',
-         'code40_b5_aesthetic',
-         'uncond2_aesthetic',
-         'DAS_alpha500_aesthetic',
-         'DAS_alpha1000_aesthetic']
+    # d = ['code_grad4_b5_st6_et2_aesthetic_gs5',
+    #      'code_grad1_b5_st6_et2_aesthetic_gs3',
+    #      'code_grad4_b5_st6_et2_aesthetic_gs3',
+    #      'code_grad4_b5_st7_et3_aesthetic_gs0',
+    #      'code40_b5_aesthetic',
+    #      'uncond2_aesthetic',
+    #      'DAS_alpha500_aesthetic',
+    #      'DAS_alpha1000_aesthetic']
+    d = ['code4_greedy_b5_aesthetic',
+         'code4_multinomial_temp200_b5_aesthetic',
+         'code4_multinomial_temp1000_b5_aesthetic',
+         'code4_multinomial_temp5000_b5_aesthetic',
+         'uncond2',
+        ]
 
     source_dirs = [x for x in outputs_path.iterdir() if Path.is_dir(x) and x.stem in d]
     # breakpoint()
@@ -115,6 +121,7 @@ def main():
         print(source_dir.stem)
 
         exp_rew = []
+        time_taken_per_sample = []
         win_rate = []
         fids = []
         cmmds = []
@@ -143,6 +150,9 @@ def main():
                 with open(prompt_dir.joinpath("rewards.json"), 'r') as fp:
                     prompt_reward = json.load(fp)
                     
+                with open(prompt_dir.joinpath("time.json"),'r') as f:
+                    time_taken = json.load(f)
+                    
                 print(f"{prompt_dir.stem} rewards are {prompt_reward}")
 
                 if len(prompt_reward) > len(uncond_rewards[scorer][target_key][prompt_dir.stem]):
@@ -150,6 +160,7 @@ def main():
 
                 exp_rew.append(sum(prompt_reward)/len(prompt_reward))
                 win_rate.append((np.array(prompt_reward) > uncond_rewards[scorer][target_key][prompt_dir.stem][:len(prompt_reward)]).astype(int).sum() / len(prompt_reward))
+                time_taken_per_sample.append(time_taken['time_taken']/time_taken['num_images'])
 
                 try:
                     # uncond_path_p = outputs_path.joinpath(f'uncond_{scorer}').joinpath(target_key).joinpath(f'images/{prompt_dir.stem}')
@@ -185,6 +196,7 @@ def main():
         perf[source_dir.stem]['win_rate'] = sum(win_rate)/len(win_rate)
         perf[source_dir.stem]['fid'] = sum(fids)/len(fids)
         perf[source_dir.stem]['cmmd'] = sum(cmmds)/len(cmmds)
+        perf[source_dir.stem]['time_taken_per_sample'] = sum(time_taken_per_sample)/(60.0*len(time_taken_per_sample))
         # perf[source_dir.stem]['ref_fid'] = sum(ref_fids)/len(ref_fids)
         # perf[source_dir.stem]['ref_cmmd'] = sum(ref_cmmds)/len(ref_cmmds)
         

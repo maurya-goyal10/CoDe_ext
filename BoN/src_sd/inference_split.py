@@ -14,6 +14,7 @@ import torch
 import copy
 import numpy as np
 import time
+import json
 
 from PIL import Image
 from tqdm.auto import tqdm
@@ -35,9 +36,12 @@ from pipelines import (
     GradCoDeSDPipelineI2I,
     GradSDPipeline_fixed,
     GradSDPipeline_fixed_new,
+    GradSDPipeline_fixed_DAS,
     CoDeGradSD,
     CoDeGradSDExtension,
     CoDeGradNewSD,
+    CoDeGradSDFinal,
+    CoDeGradSDFinalGeneral,
     CoDeGradNewSDVariant,
     GradSDPipeline_fixed_mpgd,
     prepare_image, 
@@ -50,7 +54,8 @@ from scorers import (
     ClipScorer,
     CompressibilityScorer,
     ImageRewardScorer,
-    PickScoreScorer
+    PickScoreScorer,
+    MultiReward
 )
 
 from typing import Optional
@@ -87,7 +92,7 @@ def get_parser() -> ArgumentParser:
 
 
 def run_experiment(config):
-    start_time = time.time()
+    # start_time = time.time()
     # Set device
     device = (
         "cuda"
@@ -127,6 +132,12 @@ def run_experiment(config):
         pipe.set_guidance(config.guidance.guidance_scale)
         pipe.set_start_time(config.guidance.start_time)
         pipe.set_end_time(config.guidance.end_time)
+    elif config.guidance.method == 'grad_fixed_das':
+        pipe = GradSDPipeline_fixed_DAS.from_pretrained(
+            model_id, torch_dtype=torch.float16).to(device)
+        pipe.set_guidance(config.guidance.guidance_scale)
+        pipe.set_start_time(config.guidance.start_time)
+        pipe.set_end_time(config.guidance.end_time)
     elif config.guidance.method == 'grad_fixed_new':
         pipe = GradSDPipeline_fixed_new.from_pretrained(
             model_id, torch_dtype=torch.float16).to(device)
@@ -151,6 +162,33 @@ def run_experiment(config):
         pipe.set_guidance(config.guidance.guidance_scale)
         pipe.set_start_time(config.guidance.start_time)
         pipe.set_end_time(config.guidance.end_time)
+    elif config.guidance.method == 'code_grad_final':
+        pipe = CoDeGradSDFinal.from_pretrained(
+            model_id, torch_dtype=torch.float16).to(device)
+        pipe.set_guidance(config.guidance.guidance_scale)
+        pipe.set_guidance_method(config.guidance.guidance_method)
+        pipe.set_start_time(config.guidance.start_time)
+        pipe.set_end_time(config.guidance.end_time)
+        pipe.set_do_clustering(config.guidance.do_clustering)
+        if config.guidance.do_clustering:
+            pipe.set_clustering_method(config.guidance.clustering_method)
+        pipe.set_sampling(config.guidance.sampling)
+        if config.guidance.sampling != 'greedy':
+            pipe.set_temp(config.guidance.temp)
+    elif config.guidance.method == 'code_grad_final_general':
+        pipe = CoDeGradSDFinalGeneral.from_pretrained(
+            model_id, torch_dtype=torch.float16).to(device)
+        pipe.set_guidance(config.guidance.guidance_scale)
+        pipe.set_guidance_method(config.guidance.guidance_method)
+        pipe.set_start_time(config.guidance.start_time)
+        pipe.set_end_time(config.guidance.end_time)
+        pipe.set_do_clustering(config.guidance.do_clustering)
+        pipe.set_grad_blocksize(config.guidance.guidance_blocksize)
+        if config.guidance.do_clustering:
+            pipe.set_clustering_method(config.guidance.clustering_method)
+        pipe.set_sampling(config.guidance.sampling)
+        if config.guidance.sampling != 'greedy':
+            pipe.set_temp(config.guidance.temp)
     elif config.guidance.method == 'code_grad_new_variant':
         pipe = CoDeGradNewSDVariant.from_pretrained(
             model_id, torch_dtype=torch.float16).to(device)
@@ -178,6 +216,12 @@ def run_experiment(config):
     elif config.guidance.method == "code" or config.guidance.method == "code_b1":
         pipe = CoDeSDPipeline.from_pretrained(
             model_id, torch_dtype=torch.float16).to(device)    
+        pipe.set_sampling(config.guidance.sampling)
+        if config.guidance.sampling != 'greedy':
+            pipe.set_temp(config.guidance.temp)
+        if isinstance(config.guidance.num_samples, str) and 'var' in config.guidance.num_samples:
+            pipe.set_samples_schedule(config.guidance.samples_schedule)
+            config.guidance.num_samples = config.guidance.samples_schedule[0]
     elif config.guidance.method == "code_ext" or config.guidance.method == "code_b1":
         pipe = CoDeSDExtensionPipeline.from_pretrained(
             model_id, torch_dtype=torch.float16).to(device)    
@@ -200,11 +244,6 @@ def run_experiment(config):
     # Change to DDPM scheduler
     pipe.scheduler = DDPMScheduler.from_config(
         pipe.scheduler.config, timestep_spacing="trailing")
-    if config.get('scheduler') is not None and config.scheduler == 'ddim':
-        pipe.scheduler = DDIMScheduler.from_config(
-        pipe.scheduler.config, timestep_spacing="trailing")
-        pipe.scheduler.eta = 1.0
-        print("DDIM Scheduler with eta {pipe.scheduler.eta}")
 
     # Set scorer
     if config.guidance.scorer == "aesthetic":
@@ -218,7 +257,9 @@ def run_experiment(config):
     elif config.guidance.scorer == 'imagereward':
         scorer = ImageRewardScorer(device=device)
     elif config.guidance.scorer == 'pickscore':
-        scorer = PickScoreScorer()
+        scorer = PickScoreScorer(device=device)
+    elif config.guidance.scorer == 'multireward':
+        scorer = MultiReward(config.guidance.scorer1,config.guidance.scorer2,config.guidance.scorer_weight,device=device)
     else:
         scorer = HPSScorer()
 
@@ -229,10 +270,17 @@ def run_experiment(config):
     # Set project path
     savepath = Path(config.project.path).joinpath(config.project.name)
 
-    # Initial noise samples
     num_images_per_prompt = config.guidance.num_images_per_prompt
     num_channels_latents = pipe.unet.config.in_channels
-    generator = torch.Generator(device=device).manual_seed(config.project.seed)
+    # Initial noise samples
+    if config.get('scheduler') is not None and config.scheduler == 'ddim':
+        pipe.scheduler = DDIMScheduler.from_config(
+            pipe.scheduler.config, timestep_spacing="trailing")
+        pipe.scheduler.eta = 1.0
+        print("DDIM Scheduler with eta {pipe.scheduler.eta}")
+        generator = torch.Generator(device=device)
+    else:
+        generator = torch.Generator(device=device).manual_seed(config.project.seed)
 
     # Load prompts
     with open(Path(config.project.promptspath), 'r') as fp:
@@ -295,7 +343,7 @@ def run_experiment(config):
         target_dir = [Path(target_map[str(idx)])  for idx in config.guidance.target_idxs]
         logger.info(target_dir)
     
-
+    start_time = time.time()
     if isinstance(pipe, CoDeSDPipelineI2I) or isinstance(pipe, SDPipelineI2I)\
         or isinstance(pipe, BoNSDPipelineI2I) or isinstance(pipe, GradSDPipelineI2I) or isinstance(pipe, GradSDPipelineI2I_mpgd)\
         or isinstance(pipe, GradCoDeSDPipelineI2I):
@@ -456,7 +504,23 @@ def run_experiment(config):
                     )
 
     end_time = time.time()
+    time_taken = end_time - start_time
     logger.info(f'Time Taken {((end_time - start_time) / 3600.0)} hours')
+    # savepath = savepath.joinpath(images).joinpath(prompts[0]).joinpath("time.json")
+    savepath = prompt_path.joinpath("time.json")
+    store_time = {}
+    if Path.exists(savepath): # if exists append else create new
+        with open(savepath, 'r') as fp:
+            store_time = json.load(fp)
+            
+    t1 = store_time.get("time_taken", 0.0)
+
+    store_time["num_images"] = num_images_per_prompt
+    store_time["time_taken"] = t1 + time_taken
+    
+    with open(savepath, 'w') as fp:
+        json.dump(store_time, fp)
+    
         
         # elif (isinstance(scorer, AestheticScorer) or isinstance(scorer, HPSScorer)):
         #     # If target image not present for init_noise conditioning - use BoN for generating target image and then use for init_noise conditioning:

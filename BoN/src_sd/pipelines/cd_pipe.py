@@ -16,7 +16,11 @@ from tqdm.auto import tqdm
 from diffusers import StableDiffusionPipeline
 from diffusers.pipelines.stable_diffusion import StableDiffusionPipelineOutput
 from typing import Union, Optional, List, Callable, Dict, Any
-from scorers import HPSScorer, AestheticScorer, FaceRecognitionScorer, ClipScorer,ImageRewardScorer, PickScoreScorer
+from scorers import HPSScorer, AestheticScorer, FaceRecognitionScorer, ClipScorer,ImageRewardScorer, PickScoreScorer, MultiReward
+
+import numpy as np
+
+from sampler import sampling
 
 class CoDeSDPipeline(StableDiffusionPipeline):
     @torch.no_grad()
@@ -110,6 +114,7 @@ class CoDeSDPipeline(StableDiffusionPipeline):
             list of `bool`s denoting whether the corresponding generated image likely represents "not-safe-for-work"
             (nsfw) content, according to the `safety_checker`.
         """
+        prompt_embeds_ = prompt_embeds
         # 0. Default height and width to unet
         height = height or self.unet.config.sample_size * self.vae_scale_factor
         width = width or self.unet.config.sample_size * self.vae_scale_factor
@@ -175,11 +180,53 @@ class CoDeSDPipeline(StableDiffusionPipeline):
         
         for batch_iter in tqdm(range(num_batch), total=num_batch):
 
+            if getattr(self, 'samples_schedule', None) is not None:
+                self.val_sample_size = len(timesteps)/len(self.samples_schedule)
+                self.next_sample_size = self.val_sample_size
+                self.sample_idx = 0
+                n_samples = self.samples_schedule[0]
+                prompt_embeds = self._encode_prompt(
+                    prompt,
+                    device,
+                    n_samples * self.genbatch,
+                    # num_images_per_prompt,
+                    do_classifier_free_guidance,
+                    negative_prompt,
+                    prompt_embeds=prompt_embeds_,
+                    negative_prompt_embeds=negative_prompt_embeds,
+                )
+            
             curr_samples = latents[batch_iter * self.genbatch: (batch_iter + 1) * self.genbatch]
             curr_samples = curr_samples.repeat(n_samples, 1, 1, 1) # (n_samples, 4, 64, 64)
             
             num_warmup_steps = len(timesteps) - num_inference_steps * self.scheduler.order
+            
+            
             for i, t in enumerate(timesteps):
+                
+                if getattr(self, 'samples_schedule', None) is not None:
+                    if(i>=self.next_sample_size):
+                        self.sample_idx += 1
+                        self.next_sample_size += self.val_sample_size
+                        if n_samples != self.samples_schedule[self.sample_idx]:
+                            n_samples = self.samples_schedule[self.sample_idx]
+                            if len(curr_samples) >= n_samples:
+                                curr_samples = curr_samples[:n_samples]
+                            else:
+                                repeats = int(np.ceil(n_samples / len(curr_samples)))
+                                curr_samples = (curr_samples.repeat(repeats, 1, 1, 1))[:n_samples]
+                            # curr_samples = curr_samples[:n_samples]
+                            prompt_embeds = self._encode_prompt(
+                                prompt,
+                                device,
+                                n_samples * self.genbatch,
+                                # num_images_per_prompt,
+                                do_classifier_free_guidance,
+                                negative_prompt,
+                                prompt_embeds=prompt_embeds_,
+                                negative_prompt_embeds=negative_prompt_embeds,
+                            )
+                        # print(f"{t} {n_samples} {curr_samples.shape}")
 
                 # expand the latents if we are doing classifier free guidance
                 # latent_model_input = torch.cat([latents] * 2) if do_classifier_free_guidance else latents
@@ -205,6 +252,8 @@ class CoDeSDPipeline(StableDiffusionPipeline):
                 curr_samples = self.scheduler.step(noise_pred, t, curr_samples, **extra_step_kwargs).prev_sample
 
                 prev_timestep = t - self.scheduler.config.num_train_timesteps // self.scheduler.num_inference_steps
+                
+                # print(t.item())
 
                 if ((i + 1) % block_size == 0) or (t == timesteps[-1]): # at the end of block do BoN
                     
@@ -228,19 +277,32 @@ class CoDeSDPipeline(StableDiffusionPipeline):
                         pred_original_temp = self.scheduler.step(noise_pred, prev_timestep, curr_samples, **extra_step_kwargs).pred_original_sample
                         rewards = self.compute_scores(pred_original_temp, prompt)
                     else:
-                        rewards = self.compute_scores(curr_samples, prompt)
+                        if isinstance(self.scorer, MultiReward):
+                            rewards,rewards1,rewards2 = self.compute_scores(curr_samples, prompt,return_all=True)
+                        else:
+                            rewards = self.compute_scores(curr_samples, prompt)
+                            
                     
-
                     rewards = torch.cat([x.unsqueeze(0) for x in rewards.chunk(n_samples)], dim=0) # (n_samples, self.genbatch)
-                    select_ind = torch.max(rewards, dim=0)[1]
+                    # select_ind = torch.max(rewards, dim=0)[1]
 
                     gen_sample = copy.deepcopy(curr_samples)
                     gen_sample = torch.cat([x.unsqueeze(0) for x in gen_sample.chunk(n_samples)], dim=0) # (n_samples, self.genbatch, 4, 64, 64)
                     gen_sample = gen_sample.permute(1,0,2,3,4)
-                    curr_samples = torch.cat([x[select_ind[idx]].unsqueeze(0) for idx, x in enumerate(gen_sample)], dim=0) # TODO: Make it efficient
+                    
+                    # At the end just pick the best
+                    if t<=timesteps[-1]:
+                        select_ind = torch.max(rewards, dim=0)[1]
+                        curr_samples = torch.cat([x[select_ind[idx]].unsqueeze(0) for idx, x in enumerate(gen_sample)], dim=0)
+                    
+                    # sampling techniques        
+                    else:
+                        curr_samples = sampling.sample(gen_sample,rewards,n_samples,temperature=getattr(self, 'temp', None),method=getattr(self, 'sampling', None))
+                    
+                    # curr_samples = torch.cat([x[select_ind[idx]].unsqueeze(0) for idx, x in enumerate(gen_sample)], dim=0) # TODO: Make it efficient
 
-                    if t > timesteps[-1]: # If not the end replicate n times
-                        curr_samples = curr_samples.repeat(n_samples, 1, 1, 1) # (n_samples, 4, 64, 64)
+                    # if t > timesteps[-1]: # If not the end replicate n times
+                    #     curr_samples = curr_samples.repeat(n_samples, 1, 1, 1) # (n_samples, 4, 64, 64)
 
             try:
                 self.save_outputs(curr_samples, start=(batch_iter*self.genbatch)+offset, prompt=prompt, num_try=num_try)
@@ -260,6 +322,37 @@ class CoDeSDPipeline(StableDiffusionPipeline):
 
             with open(savepath, 'w') as fp:
                 json.dump(store_rewards, fp)
+                
+            if isinstance(self.scorer, MultiReward):
+                store_rewards1 = []
+                rewards1 = torch.cat([x.unsqueeze(0) for x in rewards1.chunk(n_samples)], dim=0) # (n_samples, self.genbatch)
+                savepath1 = Path(self.path.joinpath(prompt)).joinpath("rewards1.json")
+                if Path.exists(savepath1): # if exists append else create new
+                    with open(savepath1, 'r') as fp:
+                        store_rewards1 = json.load(fp)
+                        
+
+                rewards1 = rewards1.permute(1,0)
+                rewards1 = torch.cat([x[select_ind[idx]].unsqueeze(0) for idx, x in enumerate(rewards1)], dim=0) # TODO: Make it efficient
+                store_rewards1.extend(rewards1.cpu().numpy().tolist())
+
+                with open(savepath1, 'w') as fp:
+                    json.dump(store_rewards1, fp)
+                    
+                store_rewards2 = []
+                rewards2 = torch.cat([x.unsqueeze(0) for x in rewards2.chunk(n_samples)], dim=0)
+                savepath2 = Path(self.path.joinpath(prompt)).joinpath("rewards2.json")
+                if Path.exists(savepath2): # if exists append else create new
+                    with open(savepath2, 'r') as fp:
+                        store_rewards2 = json.load(fp)
+                        
+
+                rewards2 = rewards2.permute(1,0)
+                rewards2 = torch.cat([x[select_ind[idx]].unsqueeze(0) for idx, x in enumerate(rewards2)], dim=0) # TODO: Make it efficient
+                store_rewards2.extend(rewards2.cpu().numpy().tolist())
+
+                with open(savepath2, 'w') as fp:
+                    json.dump(store_rewards2, fp)
 
         return is_failed
 
@@ -274,6 +367,15 @@ class CoDeSDPipeline(StableDiffusionPipeline):
 
     def setup_scorer(self, scorer):
         self.scorer = scorer
+        
+    def set_temp(self,temp: int=200):
+        self.temp = temp
+        
+    def set_sampling(self, sampling):
+        self.sampling = sampling
+        
+    def set_samples_schedule(self,samples_schedule):
+        self.samples_schedule = samples_schedule
 
     def save_outputs(self, latent, prompt, start, num_try):
         decoded_latents = self.decode_latents(latent)
@@ -284,7 +386,8 @@ class CoDeSDPipeline(StableDiffusionPipeline):
         try:
             if isinstance(self.scorer, HPSScorer)or\
                 isinstance(self.scorer, ImageRewardScorer) or\
-                isinstance(self.scorer, PickScoreScorer):
+                isinstance(self.scorer, PickScoreScorer)  or\
+                isinstance(self.scorer, MultiReward):
                 prompts = [prompt] * len(decoded_latents)
                 rewards = self.scorer.score(decoded_latents, prompts)
             elif isinstance(self.scorer, FaceRecognitionScorer)or\
@@ -316,13 +419,19 @@ class CoDeSDPipeline(StableDiffusionPipeline):
         # print(self.target_img.shape)
 
     @torch.no_grad()
-    def compute_scores(self, latent, prompt):
+    def compute_scores(self, latent, prompt,return_all=False):
         decoded_latents = self.decode_latents(latent)
         decoded_latents = torch.from_numpy(decoded_latents).permute(0,3,1,2)
+        
+        if return_all and isinstance(self.scorer, MultiReward):
+            prompts = [prompt] * len(decoded_latents)
+            out = self.scorer.score(decoded_latents, prompts,return_all=True)
+            return out
 
         if isinstance(self.scorer, HPSScorer) or\
             isinstance(self.scorer, ImageRewardScorer) or\
-            isinstance(self.scorer, PickScoreScorer):
+            isinstance(self.scorer, PickScoreScorer) or\
+            isinstance(self.scorer, MultiReward):
             
             prompts = [prompt] * len(decoded_latents)
             out = self.scorer.score(decoded_latents, prompts)

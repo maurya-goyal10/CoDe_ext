@@ -77,21 +77,35 @@ def generate_image_grid(methods, method_name_map, index, base_dir="outputs", pro
 # Example usage:
 if __name__ == "__main__":
 
+    # methods = [
+    #      'uncond2_aesthetic',
+    #      'code_grad4_b5_st7_et3_aesthetic_gs0',
+    #      'code_grad1_b5_st6_et2_aesthetic_gs3',
+    #      'code40_b5_aesthetic',
+    #      'code_grad4_b5_st6_et2_aesthetic_gs3',
+    #      'code_grad4_b5_st6_et2_aesthetic_gs5',
+    #      ]
+    # method_name_map = {
+    #     "uncond2_aesthetic": "uncond",
+    #     "code40_b5_aesthetic": "CoDe (N=40)",
+    #     "code_grad4_b5_st7_et3_aesthetic_gs0": "CoDe (N=4)",
+    #     "code_grad1_b5_st6_et2_aesthetic_gs3": "only gradient (gs=0.3)",
+    #     "code_grad4_b5_st6_et2_aesthetic_gs3": "CoDe (N=4) + grad (gs=0.3)",
+    #     "code_grad4_b5_st6_et2_aesthetic_gs5": "CoDe (N=4) + grad (gs=0.5)",
+    # }
     methods = [
          'uncond2_aesthetic',
          'code_grad4_b5_st7_et3_aesthetic_gs0',
-         'code_grad1_b5_st6_et2_aesthetic_gs3',
          'code40_b5_aesthetic',
          'code_grad4_b5_st6_et2_aesthetic_gs3',
-         'code_grad4_b5_st6_et2_aesthetic_gs5',
+         'DAS_alpha1000_aesthetic'
          ]
     method_name_map = {
         "uncond2_aesthetic": "uncond",
         "code40_b5_aesthetic": "CoDe (N=40)",
         "code_grad4_b5_st7_et3_aesthetic_gs0": "CoDe (N=4)",
-        "code_grad1_b5_st6_et2_aesthetic_gs3": "only gradient (gs=0.3)",
         "code_grad4_b5_st6_et2_aesthetic_gs3": "CoDe (N=4) + grad (gs=0.3)",
-        "code_grad4_b5_st6_et2_aesthetic_gs5": "CoDe (N=4) + grad (gs=0.5)",
+        'DAS_alpha1000_aesthetic': "DAS (alpha=0.01)"
     }
     index = 0  # Example image index
     generate_image_grid(methods, method_name_map, index,save_path=f"grid_{index}_final.png")
