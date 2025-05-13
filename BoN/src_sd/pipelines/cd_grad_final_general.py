@@ -8,7 +8,7 @@ from tqdm.auto import tqdm
 from diffusers import StableDiffusionPipeline
 from diffusers.pipelines.stable_diffusion import StableDiffusionPipelineOutput
 from typing import Union, Optional, List, Callable, Dict, Any, Tuple
-from scorers import HPSScorer, AestheticScorer, FaceRecognitionScorer, ClipScorer,ImageRewardScorer, PickScoreScorer
+from scorers import HPSScorer, AestheticScorer, FaceRecognitionScorer, ClipScorer,ImageRewardScorer, PickScoreScorer, MultiReward, CompressibilityScorer
 from diffusers.schedulers.scheduling_ddpm import DDPMSchedulerOutput, DDPMScheduler
 
 from sklearn.cluster import DBSCAN, KMeans
@@ -18,6 +18,9 @@ import numpy as np
 from sampler import sampling
 from cluster import clustering
 from guidance_scaling import scaling_guidance
+
+from torchopt.diff.zero_order import zero_order
+from torch.distributions import Normal
 
 class CoDeGradSDFinalGeneral(StableDiffusionPipeline):
     @torch.no_grad()
@@ -111,6 +114,7 @@ class CoDeGradSDFinalGeneral(StableDiffusionPipeline):
             list of `bool`s denoting whether the corresponding generated image likely represents "not-safe-for-work"
             (nsfw) content, according to the `safety_checker`.
         """
+        prompt_embeds_ = prompt_embeds
         # 0. Default height and width to unet
         height = height or self.unet.config.sample_size * self.vae_scale_factor
         width = width or self.unet.config.sample_size * self.vae_scale_factor
@@ -175,13 +179,58 @@ class CoDeGradSDFinalGeneral(StableDiffusionPipeline):
         num_batch = num_images_per_prompt // self.genbatch
         
         for batch_iter in tqdm(range(num_batch), total=num_batch):
+            
+            if getattr(self, 'samples_schedule', None) is not None:
+                self.val_sample_size = len(timesteps)/len(self.samples_schedule)
+                self.next_sample_size = self.val_sample_size
+                self.sample_idx = 0
+                n_samples = self.samples_schedule[0]
+                prompt_embeds = self._encode_prompt(
+                    prompt,
+                    device,
+                    n_samples * self.genbatch,
+                    # num_images_per_prompt,
+                    do_classifier_free_guidance,
+                    negative_prompt,
+                    prompt_embeds=prompt_embeds_,
+                    negative_prompt_embeds=negative_prompt_embeds,
+                )
 
             curr_samples = latents[batch_iter * self.genbatch: (batch_iter + 1) * self.genbatch]
             curr_samples = curr_samples.repeat(n_samples, 1, 1, 1) # (n_samples, 4, 64, 64)
             
             num_warmup_steps = len(timesteps) - num_inference_steps * self.scheduler.order
             for i, t in enumerate(timesteps):
-
+                
+                if getattr(self, 'samples_schedule', None) is not None:
+                    # print(f"At time {t} the shape of curr samples is {curr_samples.shape}")
+                    if(i>=self.next_sample_size):
+                        # print(f"At {t} rewards are {rewards} {rewards.argmax()}")
+                        # batch_max_reward = torch.max(rewards)
+                        # print(f"At timestep {t} max rewards out of {rewards} is {batch_max_reward}")
+                        # batch_prev_reward.append(batch_max_reward)
+                        self.sample_idx += 1
+                        self.next_sample_size += self.val_sample_size
+                        if n_samples != self.samples_schedule[self.sample_idx]:
+                            n_samples = self.samples_schedule[self.sample_idx]
+                            if len(curr_samples) >= n_samples:
+                                curr_samples = curr_samples[:n_samples]
+                            else:
+                                repeats = int(np.ceil(n_samples / len(curr_samples)))
+                                curr_samples = (curr_samples.repeat(repeats, 1, 1, 1))[:n_samples]
+                            # curr_samples = curr_samples[:n_samples]
+                            prompt_embeds = self._encode_prompt(
+                                prompt,
+                                device,
+                                n_samples * self.genbatch,
+                                # num_images_per_prompt,
+                                do_classifier_free_guidance,
+                                negative_prompt,
+                                prompt_embeds=prompt_embeds_,
+                                negative_prompt_embeds=negative_prompt_embeds,
+                            )
+                            
+                # print(f"Timestep {t} the shape of curr_samples is {curr_samples.shape}")
                 # expand the latents if we are doing classifier free guidance
                 # latent_model_input = torch.cat([latents] * 2) if do_classifier_free_guidance else latents
                 
@@ -317,10 +366,14 @@ class CoDeGradSDFinalGeneral(StableDiffusionPipeline):
                         pred_original_temp = self.scheduler.step(noise_pred, prev_timestep, curr_samples, **extra_step_kwargs).pred_original_sample
                         rewards = self.compute_scores(pred_original_temp, prompt)
                     else:
+                        if isinstance(self.scorer, MultiReward):
+                            rewards,rewards1,rewards2 = self.compute_scores(curr_samples, prompt,return_all=True)
+                        else:
+                            rewards = self.compute_scores(curr_samples, prompt)
                         rewards = self.compute_scores(curr_samples, prompt)
                     
                     rewards = torch.cat([x.unsqueeze(0) for x in rewards.chunk(n_samples)], dim=0) # (n_samples, self.genbatch)
-
+                    
                     gen_sample = copy.deepcopy(curr_samples)
                     gen_sample = torch.cat([x.unsqueeze(0) for x in gen_sample.chunk(n_samples)], dim=0) # (n_samples, self.genbatch, 4, 64, 64)
                     gen_sample = gen_sample.permute(1,0,2,3,4)
@@ -352,6 +405,37 @@ class CoDeGradSDFinalGeneral(StableDiffusionPipeline):
 
             with open(savepath, 'w') as fp:
                 json.dump(store_rewards, fp)
+                
+            if isinstance(self.scorer, MultiReward):
+                store_rewards1 = []
+                rewards1 = torch.cat([x.unsqueeze(0) for x in rewards1.chunk(n_samples)], dim=0) # (n_samples, self.genbatch)
+                savepath1 = Path(self.path.joinpath(prompt)).joinpath("rewards1.json")
+                if Path.exists(savepath1): # if exists append else create new
+                    with open(savepath1, 'r') as fp:
+                        store_rewards1 = json.load(fp)
+                        
+
+                rewards1 = rewards1.permute(1,0)
+                rewards1 = torch.cat([x[select_ind[idx]].unsqueeze(0) for idx, x in enumerate(rewards1)], dim=0) # TODO: Make it efficient
+                store_rewards1.extend(rewards1.cpu().numpy().tolist())
+
+                with open(savepath1, 'w') as fp:
+                    json.dump(store_rewards1, fp)
+                    
+                store_rewards2 = []
+                rewards2 = torch.cat([x.unsqueeze(0) for x in rewards2.chunk(n_samples)], dim=0)
+                savepath2 = Path(self.path.joinpath(prompt)).joinpath("rewards2.json")
+                if Path.exists(savepath2): # if exists append else create new
+                    with open(savepath2, 'r') as fp:
+                        store_rewards2 = json.load(fp)
+                        
+
+                rewards2 = rewards2.permute(1,0)
+                rewards2 = torch.cat([x[select_ind[idx]].unsqueeze(0) for idx, x in enumerate(rewards2)], dim=0) # TODO: Make it efficient
+                store_rewards2.extend(rewards2.cpu().numpy().tolist())
+
+                with open(savepath2, 'w') as fp:
+                    json.dump(store_rewards2, fp)
 
         return is_failed
     
@@ -438,6 +522,9 @@ class CoDeGradSDFinalGeneral(StableDiffusionPipeline):
     def set_sampling_method(self,clustering_method):
         self.clustering_method = clustering_method
         
+    def set_samples_schedule(self,samples_schedule):
+        self.samples_schedule = samples_schedule
+        
     def save_outputs(self, latent, prompt, start, num_try):
         decoded_latents = self.decode_latents(latent)
         image_pils = self.numpy_to_pil(decoded_latents)
@@ -447,7 +534,8 @@ class CoDeGradSDFinalGeneral(StableDiffusionPipeline):
         try:
             if isinstance(self.scorer, HPSScorer)or\
                 isinstance(self.scorer, ImageRewardScorer) or\
-                isinstance(self.scorer, PickScoreScorer):
+                isinstance(self.scorer, PickScoreScorer) or\
+                isinstance(self.scorer, MultiReward):
                 prompts = [prompt] * len(decoded_latents)
                 rewards = self.scorer.score(decoded_latents, prompts)
             elif isinstance(self.scorer, FaceRecognitionScorer)or\
@@ -479,13 +567,19 @@ class CoDeGradSDFinalGeneral(StableDiffusionPipeline):
         # print(self.target_img.shape)
 
     @torch.no_grad()
-    def compute_scores(self, latent, prompt):
+    def compute_scores(self, latent, prompt,return_all=False):
         decoded_latents = self.decode_latents(latent)
         decoded_latents = torch.from_numpy(decoded_latents).permute(0,3,1,2)
+        
+        if return_all and isinstance(self.scorer, MultiReward):
+            prompts = [prompt] * len(decoded_latents)
+            out = self.scorer.score(decoded_latents, prompts,return_all=True)
+            return out
 
         if isinstance(self.scorer, HPSScorer) or\
             isinstance(self.scorer, ImageRewardScorer) or\
-            isinstance(self.scorer, PickScoreScorer):
+            isinstance(self.scorer, PickScoreScorer) or\
+            isinstance(self.scorer, MultiReward):
             
             prompts = [prompt] * len(decoded_latents)
             out = self.scorer.score(decoded_latents, prompts)
@@ -517,7 +611,7 @@ class CoDeGradSDFinalGeneral(StableDiffusionPipeline):
         # print(f"The shape of the predicted original sample is: {pred_original_sample.shape}")
         
         self.vae.eval()
-        self.scorer.eval()
+        # self.scorer.eval()
         
         im_pix_un = self.vae.decode(
             pred_original_sample.to(self.vae.dtype) / self.vae.config.scaling_factor,
@@ -530,7 +624,7 @@ class CoDeGradSDFinalGeneral(StableDiffusionPipeline):
         # print(im_pix.shape)
         
         # Compute rewards/loss based on scorer type
-        if isinstance(self.scorer, (HPSScorer,PickScoreScorer)):
+        if isinstance(self.scorer, (HPSScorer,PickScoreScorer,MultiReward)):
             prompts = [prompt] * len(im_pix)
             rewards = -1 * self.scorer.loss_fn(im_pix, prompts)
         elif isinstance(self.scorer, (FaceRecognitionScorer, ClipScorer)):
@@ -538,6 +632,26 @@ class CoDeGradSDFinalGeneral(StableDiffusionPipeline):
         else:
             rewards = -1 * self.scorer.loss_fn(im_pix)
             
+        if isinstance(self.scorer, (CompressibilityScorer)):
+            def loss_fn(latents):
+                # Recompute im_pix within the function scope
+                pred_original_sample = predict_x0_from_xt(
+                    self.scheduler, noise_pred, t, latents
+                )
+                im_pix_un = self.vae.decode(pred_original_sample.to(self.vae.dtype) / self.vae.config.scaling_factor, return_dict=False)[0]
+                im_pix = ((im_pix_un / 2) + 0.5).clamp(0, 1).cpu()
+
+                rewards = -1 * self.scorer.loss_fn(im_pix)
+
+                return rewards.sum()
+            
+            # grad_fn = zero_order(distribution=Normal(torch.zeros_like(latent_in),torch.ones_like(latent_in)))(loss_fn)
+            grad_fn = zero_order(distribution=Normal(torch.zeros_like(latent_in[0,0,0,0]),torch.ones_like(latent_in[0,0,0,0])),method='antithetic')(loss_fn)
+            loss = grad_fn(latent_in)
+            grad = torch.autograd.grad(loss.sum(), latent_in)[0].detach()
+            
+            # print(grad.shape)
+            return grad
         # Compute gradient
         grad = torch.autograd.grad(rewards.sum(), latent_in)[0].detach()
         
