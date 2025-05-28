@@ -21,6 +21,7 @@ from ldm.models.diffusion.plms import PLMSSampler
 from ldm.models.diffusion.dpm_solver import DPMSolverSampler
 
 from ldm.models.diffusion.aesthetic.aesthetic_scorer import AestheticScorer
+from ldm.models.diffusion.pickscore.pickscore_scorer import PickScoreScorer
 
 from diffusers.pipelines.stable_diffusion.safety_checker import StableDiffusionSafetyChecker
 from transformers import AutoFeatureExtractor
@@ -102,19 +103,17 @@ def load_score(file_path):
     if os.path.exists(file_path):
         with open(file_path, "r") as f:
             return json.load(f)
-    return {}
+    return []
 
 def save_score(file_path, score):
     with open(file_path, "w") as f:
-        json.dump(score, f, indent=4)
+        json.dump(score, f)
 
 def update_score(file_path, prompt, new_score):
     results = load_score(file_path)
-    if prompt not in results:
-        results[prompt] = []
-    elif not isinstance(results[prompt], list):
-        results[prompt] = [results[prompt]] 
-    results[prompt].append(new_score)
+    if not isinstance(results, list):
+        results = [results] 
+    results.append(new_score)
     save_score(file_path, results)
 
 
@@ -331,7 +330,8 @@ def main():
             data = f.read().splitlines()
             data = list(chunk(data, batch_size))
 
-    sample_path = os.path.join(outpath, f"aesthetic_outputs")
+    # sample_path = os.path.join(outpath, f"FreeDoM_pickscore_rho{opt.rho}")
+    sample_path = os.path.join(outpath, f"FreeDoM_aesthetic_rho{opt.rho}")
     os.makedirs(sample_path, exist_ok=True)
     base_count = len(os.listdir(sample_path))
     grid_count = len(os.listdir(outpath)) - 1
@@ -343,6 +343,10 @@ def main():
     precision_scope = autocast if opt.precision=="autocast" else nullcontext
     # with torch.no_grad():
     print(data)
+    
+    image_encoder = AestheticScorer().cuda()
+    # image_encoder = PickScoreScorer().cuda()
+    
     with precision_scope("cuda"):
         with model.ema_scope():
 
@@ -419,7 +423,7 @@ def main():
                 num_images_per_prompt = opt.n_iter
 
                 offset = 0
-                savepath = Path(sample_path).joinpath("images").joinpath(f"{prompt}_rho{opt.rho}")
+                savepath = Path(sample_path).joinpath("images").joinpath(f"{prompt}")
                 # if Path.exists(savepath):
 
                 #     images = [x for x in savepath.iterdir() if x.suffix == '.png']
@@ -456,37 +460,42 @@ def main():
                                                         unconditional_conditioning=uc,
                                                         eta=opt.ddim_eta,
                                                         x_T=start_code,
-                                                        rho=opt.rho)
+                                                        rho=opt.rho,
+                                                        prompt = prompt,
+                                                        image_encoder = image_encoder)
 
                     x_samples_ddim = model.decode_first_stage(samples_ddim)
-                    aesthetic_score = AestheticScorer().cuda().score(x_samples_ddim)[0].item()
+                    # score = AestheticScorer().cuda().score(x_samples_ddim)[0].item()
+                    # score = image_encoder.score(x_samples_ddim.detach(),prompt)[0].item()
+                    score = image_encoder.score(x_samples_ddim.detach())[0].item()
                     x_samples_ddim = torch.clamp((x_samples_ddim + 1.0) / 2.0, min=0.0, max=1.0)
                     x_samples_ddim = x_samples_ddim.cpu().permute(0, 2, 3, 1).detach().numpy()
 
-                    print(f"The value of the aesthetic score is {aesthetic_score}")
+                    # print(f"The value of the aesthetic score is {aesthetic_score}")
                     # x_checked_image, has_nsfw_concept = check_safety(x_samples_ddim)
                     x_checked_image = x_samples_ddim
                     x_checked_image_torch = torch.from_numpy(x_checked_image).permute(0, 3, 1, 2)
                     
-                    score_dir = os.path.join(savepath, f"scores.json")
+                    score_dir = os.path.join(savepath, f"rewards.json")
                     
                     z = 0
                     if os.path.exists(score_dir):
                         with open(score_dir,"r") as f:
                             data = json.load(f)
                             
-                        if data.get(prompt) is not None:
-                            z = len(data[prompt])
+                        if data is not None:
+                            z = len(data)
 
                     if not opt.skip_save:
                         for x_sample in x_checked_image_torch:
                             x_sample = 255. * rearrange(x_sample.cpu().numpy(), 'c h w -> h w c')
                             img = Image.fromarray(x_sample.astype(np.uint8))
                             # img = put_watermark(img, wm_encoder)
-                            img.save(os.path.join(savepath, f'{j + offset}_{z}.png'))
+                            img.save(os.path.join(savepath, f'{z}.png'))
                             z += 1
                             # base_count += 1
-                            update_score(score_dir,prompt,aesthetic_score) 
+                            update_score(score_dir,prompt,score) 
+                # torch.cuda.empty_cache()
 
             # tic = time.time()
             # all_samples = list()

@@ -2,11 +2,11 @@
 #
 
 for FILE in *.sbatch; do
-    if [[ "${FILE}" == *"pytorch"* ]]; then
-        echo "Not submitting template."
-    else
+    if [[ "${FILE}" == *"code40"* ]]; then
         echo ${FILE}
         sbatch ${FILE}
         sleep 1
+    else
+        echo "Not submitting template."
     fi
 done

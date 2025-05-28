@@ -7,9 +7,11 @@ import numpy as np
 def cluster(curr_samples_np,method="KMeans"):
     if method=="KMeans":
         # print(method)
-        n_clusters = 2
+        l = curr_samples_np.shape[0]
+        n_clusters = l // 2 if l >= 4 else l
         kmeans = KMeans(n_clusters=n_clusters)
         labels = kmeans.fit_predict(curr_samples_np)
+        # print(f"The shape of the labels is {labels.shape} and the n_clusters is {n_clusters}")
         return n_clusters,labels
     
     elif method=="HDBSCAN":

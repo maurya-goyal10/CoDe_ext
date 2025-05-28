@@ -5,12 +5,12 @@
 # -----------------------------------------------------------------------------
 
 #SBATCH --partition=insy,general
-#SBATCH --qos=medium
-#SBATCH --time=10:00:00
-#SBATCH --output=slurm.out
+#SBATCH --qos=short
+#SBATCH --time=02:00:00
+#SBATCH --output=compute_scores.out
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=4
-#SBATCH --mem=30000
+#SBATCH --mem=20000
 #SBATCH --gres=gpu:a40:1
 
 # ------------------------------------------------------------------------------
@@ -23,14 +23,16 @@
 # Setting up the environment
 # ------------------------------------------------------------------------------
 
+echo "----------------- Environment ------------------"
 module use /opt/insy/modulefiles
 module load cuda/11.3
 module load miniconda/3.9
 
-conda activate mpgd
+conda activate ldm
 
 export PYTHONDONTWRITEBYTECODE=abc
 export PYTHONUNBUFFERED=TRUE
+export HF_HOME=/tudelft.net/staff-umbrella/StudentsCVlab/mgoyal/hf_cache
 
 # ------------------------------------------------------------------------------
 # And finally running the code
@@ -44,9 +46,7 @@ date
 python -c "import torch; print(torch.cuda.device_count())"
 nvidia-smi
 
-cd ../../../
-
-python commandline
+python compute_scores.py
 
 echo -n "This run completed on: "
 date

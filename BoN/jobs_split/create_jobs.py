@@ -50,7 +50,7 @@ def main():
 
     for method in methods:
 
-        if method.stem not in ['code_grad_final_general']: # 'code_grad', 'uncond'
+        if method.stem not in ['c_code']: # 'code_grad', 'uncond'
             continue
 
         curr_path = Path(method.stem)
@@ -61,11 +61,20 @@ def main():
 
         configs = [x for x in method.iterdir() if x.is_file()]
         # breakpoint()
-        for config in configs:   
-            if ('code_grad_final_general' not in config.stem):
-                continue
-            if('_st7_et3_' not in config.stem):
-                continue
+        for config in configs: 
+            
+            # if 'multireward' in config.stem:
+            #     continue
+            # if not 'general4_' in config.stem:
+            #     continue
+            # if not any(clustering in config.stem for clustering in ('KMeans','HDBSCAN')):
+            #     continue
+            # if('code40' not in config.stem):
+            #     continue
+            # if ('var4revi' not in config.stem):
+            #     continue
+            # if('_st7_et3_' not in config.stem):
+            #     continue
             # if not any(temp in config.stem for temp in ('temp2000_', 'temp3000_', 'temp4000_', 'temp6000_')):
             #     continue
             # if ('temp1000_' not in config.stem and '5000' not in config.stem):
@@ -76,6 +85,7 @@ def main():
             #     continue
             # if 'code1_' not in config.stem and 'gs3' not in config.stem:
             #     continue
+            # if 'code40' in config.stem:
             print(config.stem)
             create_job_file(config.stem, curr_path)
 

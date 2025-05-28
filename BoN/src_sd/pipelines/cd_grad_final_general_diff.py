@@ -8,7 +8,7 @@ from tqdm.auto import tqdm
 from diffusers import StableDiffusionPipeline
 from diffusers.pipelines.stable_diffusion import StableDiffusionPipelineOutput
 from typing import Union, Optional, List, Callable, Dict, Any, Tuple
-from scorers import HPSScorer, AestheticScorer, FaceRecognitionScorer, ClipScorer,ImageRewardScorer, PickScoreScorer, MultiReward, CompressibilityScorer
+from scorers import HPSScorer, AestheticScorer, FaceRecognitionScorer, ClipScorer,ImageRewardScorer, PickScoreScorer, MultiReward
 from diffusers.schedulers.scheduling_ddpm import DDPMSchedulerOutput, DDPMScheduler
 
 from sklearn.cluster import DBSCAN, KMeans
@@ -18,9 +18,6 @@ import numpy as np
 from sampler import sampling
 from cluster import clustering
 from guidance_scaling import scaling_guidance
-
-from torchopt.diff.zero_order import zero_order
-from torch.distributions import Normal
 
 class CoDeGradSDFinalGeneral(StableDiffusionPipeline):
     @torch.no_grad()
@@ -330,23 +327,21 @@ class CoDeGradSDFinalGeneral(StableDiffusionPipeline):
                                 noise_pred_uncond, noise_pred_text = noise_pred.chunk(2)
                                 correction = (noise_pred_text - noise_pred_uncond)
                                 noise_pred = noise_pred_uncond + guidance_scale * (noise_pred_text - noise_pred_uncond)
-                            
-                            # batch_size_grad = 1
-                            # if hasattr(self,'batch_size_grad'):
-                            #     batch_size_grad  = self.batch_size_grad
                                 
-                            for k in range(curr_samples.shape[0]):
-                                grad_k = self.compute_gradient(curr_samples[[k]], prompt, noise_pred[[k]], prev_timestep)
+                            for k in range(curr_samples.shape[0]//self.grad_batch):
+                                grad_k = self.compute_gradient(
+                                    curr_samples[[self.grad_batch*k:self.grad_batch*(k+1)]], 
+                                    prompt, 
+                                    noise_pred[[self.grad_batch*k:self.grad_batch*(k+1)]], 
+                                    [prev_timestep]*self.grad_batch)
                                 # grad_k_2 = self.compute_gradient(curr_samples[[k]], prompt, noise_pred[[k]], prev_timestep)
                                 # print(f"{t.item()} {torch.allclose(grad_k, grad_k_2, atol=1e-6)}")
                                 # grad_k = self.compute_gradient(curr_samples[k:k+batch_gradient].unsqueeze(0), prompt, noise_pred[k:k+batch_gradient], prev_timestep)
-                                # target_guidance = scaling_guidance.set_scale(grad_k,correction[k:k+(batch_size_grad)],self.target_guidance,guidance_scale,self.guidance_method)
                                 target_guidance = scaling_guidance.set_scale(grad_k,correction[[k]],self.target_guidance,guidance_scale,self.guidance_method)
                                 # grad_norm = (grad_k * grad_k).mean().sqrt().item()
                                 # target_guidance = (correction * correction).mean().sqrt().item() * guidance_scale / (grad_norm + 1e-8) * self.target_guidance 
                                 # if target_guidance > 150.0: target_guidance = 150.0
                                 # print(f"t: {t.item()}, k: {k}, the target_guidance is {target_guidance} the grad norm is {grad_norm}")
-                                # curr_samples[k:k+(batch_size_grad)] = curr_samples[k:k+(batch_size_grad)] + target_guidance[:,None,None,None]*grad_k
                                 curr_samples[[k]] = curr_samples[[k]] + target_guidance*grad_k
                                 # print(f"k: {k} The shape of the curr samples is {curr_samples.shape} and the shape of the grad is {grad_k.shape} ")
 
@@ -531,14 +526,8 @@ class CoDeGradSDFinalGeneral(StableDiffusionPipeline):
     def set_samples_schedule(self,samples_schedule):
         self.samples_schedule = samples_schedule
         
-    def set_zoo_method(self,zoo_method):
-        self.zoo_method = zoo_method
-        
-    def set_zoo_n_sample(self,zoo_n_sample):
-        self.zoo_n_sample = zoo_n_sample
-        
-    def set_batch_size_grad(self,batch_size_grad):
-        self.batch_size_grad = batch_size_grad
+    def set_grad_batch(self,grad_batch):
+        self.grad_batch = grad_batch
         
     def save_outputs(self, latent, prompt, start, num_try):
         decoded_latents = self.decode_latents(latent)
@@ -647,29 +636,8 @@ class CoDeGradSDFinalGeneral(StableDiffusionPipeline):
         else:
             rewards = -1 * self.scorer.loss_fn(im_pix)
             
-        if isinstance(self.scorer, (CompressibilityScorer)):
-            def loss_fn(latents):
-                # Recompute im_pix within the function scope
-                pred_original_sample = predict_x0_from_xt(
-                    self.scheduler, noise_pred, t, latents
-                )
-                im_pix_un = self.vae.decode(pred_original_sample.to(self.vae.dtype) / self.vae.config.scaling_factor, return_dict=False)[0]
-                im_pix = ((im_pix_un / 2) + 0.5).clamp(0, 1).cpu()
-
-                rewards = -1 * self.scorer.loss_fn(im_pix)
-
-                return rewards.sum()
-            
-            # grad_fn = zero_order(distribution=Normal(torch.zeros_like(latent_in),torch.ones_like(latent_in)))(loss_fn)
-            grad_fn = zero_order(distribution=Normal(torch.zeros_like(latent_in[0,0,0,0]),torch.ones_like(latent_in[0,0,0,0])),method=self.zoo_method,num_samples=self.zoo_n_sample)(loss_fn)
-            loss = grad_fn(latent_in)
-            grad = torch.autograd.grad(loss.sum(), latent_in)[0].detach()
-            
-            # print(grad.shape)
-            return grad
         # Compute gradient
         grad = torch.autograd.grad(rewards.sum(), latent_in)[0].detach()
-        # grad = torch.autograd.grad(rewards, latent_in,grad_outputs=torch.ones_like(rewards))[0].detach()
         
         # Clean up to free memory
         del im_pix_un, im_pix, rewards

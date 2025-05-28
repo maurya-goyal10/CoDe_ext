@@ -12,9 +12,10 @@ device = (
 )
 
 class MultiReward:
-    def __init__(self, sc1, sc2, weight=1, device=device):
+    def __init__(self, sc1, sc2, scorer_weight_1=1, scorer_weight_2=1,device=device):
         self.scorer_names = [sc1, sc2]
-        self.weight = weight
+        self.scorer_weight_1 = scorer_weight_1
+        self.scorer_weight_2 = scorer_weight_2
         self.scorer1 = self._init_scorer(sc1, device)
         self.scorer2 = self._init_scorer(sc2, device)
 
@@ -48,8 +49,8 @@ class MultiReward:
         # print(f"{self.scorer_names[0]} score is {score1}")
         # print(f"{self.scorer_names[1]} score is {score2}")
         if return_all:
-            return score1.cpu() + self.weight * score2.cpu(),score1.cpu(), score2.cpu()
-        return score1.cpu() + self.weight * score2.cpu()
+            return self.scorer_weight_1 * score1.cpu() + self.scorer_weight_2 * score2.cpu(),score1.cpu(), score2.cpu()
+        return self.scorer_weight_1 * score1.cpu() + self.scorer_weight_2 * score2.cpu()
     
     def _score_with_scorer(self, scorer, name, image, prompt):
         if name in ["aesthetic", "compress"]:
@@ -60,7 +61,7 @@ class MultiReward:
     def loss_fn(self,image,prompt):
         loss1 = self._loss(self.scorer1, self.scorer_names[0], image, prompt)
         loss2 = self._loss(self.scorer2, self.scorer_names[1], image, prompt)
-        return loss1 + self.weight * loss2
+        return self.scorer_weight_1*loss1.cpu() + self.scorer_weight_2 * loss2.cpu()
     
     def _loss(self, scorer, name, image, prompt):
         if name in ["aesthetic", "compress"]:

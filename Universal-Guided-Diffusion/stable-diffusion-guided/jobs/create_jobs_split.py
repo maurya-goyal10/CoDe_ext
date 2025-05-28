@@ -13,13 +13,17 @@ from pathlib import Path
 
 _TASKS = {
     # 'aesthetic': {
-    #     'weights': [100, 200, 400, 800, 1600],
-    #     'cmd': 'scripts/aesthetic.py --scale 3.0 --optim_forward_guidance --optim_num_steps 6 --optim_original_conditioning --ddim_steps 500'
+    #     'weights': [25],
+    #     'cmd': 'scripts/aesthetic.py --scale 5.0 --optim_forward_guidance --optim_num_steps 6 --optim_original_conditioning --ddim_steps 100'
     # },
-    'face': {
-        'weights': [20000], #[5000, 10000, 20000, 30000, 40000],
-        'cmd': 'scripts/face_detection.py --optim_forward_guidance --fr_crop --optim_num_steps 2 --optim_original_conditioning --ddim_steps 500'
+    'pickscore': {
+        'weights': [20,25,30,40,50],
+        'cmd': 'scripts/pickscore.py --scale 5.0 --optim_forward_guidance --optim_num_steps 6 --optim_original_conditioning --ddim_steps 100'
     },
+    # 'face': {
+    #     'weights': [20000], #[5000, 10000, 20000, 30000, 40000],
+    #     'cmd': 'scripts/face_detection.py --optim_forward_guidance --fr_crop --optim_num_steps 2 --optim_original_conditioning --ddim_steps 500'
+    # },
     # 'style': {
     #     'weights': [1, 3, 6, 12, 24],
     #     'cmd': 'scripts/style_transfer.py --scale 3.0 --optim_forward_guidance --optim_num_steps 6 --optim_original_conditioning --ddim_steps 500'
@@ -44,7 +48,7 @@ if 'housky' in currhost: # shell cluster
 elif currhost == 'tud1006406':  # sayak desktop
     MODEL_CHECKPOINT = '/home/sayak/Projects/PhD_GuidedDiff/Universal-Guided-Diffusion/stable-diffusion-guided/ckpts/v1-5-pruned-emaonly.ckpt'
 else: # cluster
-    MODEL_CHECKPOINT = '/tudelft.net/staff-bulk/ewi/insy/VisionLab/smukherjee/Universal-Guided-Diffusion/stable-diffusion-guided/ckpts/v1-5-pruned-emaonly.ckpt'
+    MODEL_CHECKPOINT = '/tudelft.net/staff-umbrella/StudentsCVlab/mgoyal/CoDe_ext/Universal-Guided-Diffusion/stable-diffusion-guided/ckpts/v1-5-pruned-emaonly.ckpt'
 
 def create_job_file(param, export_path, task, target_idx, prompt_idx, strength=None):
     """Create the slurm job file
@@ -73,9 +77,9 @@ def create_job_file(param, export_path, task, target_idx, prompt_idx, strength=N
         elif re.search("commandline", line):
             
             if strength is None:
-                command = f'{_TASKS[task]["cmd"]} --text_type {prompt_idx} --indexes {target_idx} --optim_forward_guidance_wt {param} --optim_folder ./outputs/test_{task}_{param} --ckpt {MODEL_CHECKPOINT} --trials 50'
+                command = f'{_TASKS[task]["cmd"]} --text_type {prompt_idx} --indexes {target_idx} --optim_forward_guidance_wt {param} --optim_folder ./outputs/test_{task}_{param} --ckpt {MODEL_CHECKPOINT} --trials 10'
             else:
-                command = f'{_TASKS[task]["cmd"]} --text_type {prompt_idx} --indexes {target_idx} --optim_forward_guidance_wt {param} --optim_folder ./outputs/test_{task}_{param}_r{int(float(round(strength,1))*10)} --ckpt {MODEL_CHECKPOINT} --strength {float(round(strength,1))} --trials 50'
+                command = f'{_TASKS[task]["cmd"]} --text_type {prompt_idx} --indexes {target_idx} --optim_forward_guidance_wt {param} --optim_folder ./outputs/test_{task}_{param}_r{int(float(round(strength,1))*10)} --ckpt {MODEL_CHECKPOINT} --strength {float(round(strength,1))} --trials 10'
             
             updated_lines.append(line.replace("commandline", command))
 
@@ -100,13 +104,13 @@ def main():
 
     for task in _TASKS.keys():
 
-        save_path = Path('face_adds').joinpath(Path(f'{task}_split'))
+        save_path = Path(task).joinpath(Path(f'{task}_split'))
 
         if not Path.exists(save_path):
             Path.mkdir(save_path, parents=True, exist_ok=True)
 
         num_targets = 2
-        num_prompts = 4 if task == 'strokegen' else 3
+        num_prompts = 1 # if task == 'strokegen' else 3
         if task == 'aesthetic':
             num_targets = 1 # no target. generate all samples based on text
 

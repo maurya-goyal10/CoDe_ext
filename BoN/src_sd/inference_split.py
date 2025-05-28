@@ -42,6 +42,7 @@ from pipelines import (
     CoDeGradNewSD,
     CoDeGradSDFinal,
     CoDeGradSDFinalGeneral,
+    CoDeGradSDFinalI2IGeneral,
     CoDeGradNewSDVariant,
     GradSDPipeline_fixed_mpgd,
     prepare_image, 
@@ -184,11 +185,41 @@ def run_experiment(config):
         pipe.set_end_time(config.guidance.end_time)
         pipe.set_do_clustering(config.guidance.do_clustering)
         pipe.set_grad_blocksize(config.guidance.guidance_blocksize)
+        # if 'batch_size_grad' in config.guidance and config.guidance.batch_size_grad is not None:
+        #     pipe.set_batch_size_grad(config.guidance.batch_size_grad)
         if config.guidance.do_clustering:
             pipe.set_clustering_method(config.guidance.clustering_method)
         pipe.set_sampling(config.guidance.sampling)
         if config.guidance.sampling != 'greedy':
             pipe.set_temp(config.guidance.temp)
+        if config.guidance.scorer == 'compress':
+            pipe.set_zoo_method(config.guidance.zoo_method)
+            pipe.set_zoo_n_sample(config.guidance.zoo_n_sample)
+        if isinstance(config.guidance.num_samples, str) and 'var' in config.guidance.num_samples:
+            pipe.set_samples_schedule(config.guidance.samples_schedule)
+            config.guidance.num_samples = config.guidance.samples_schedule[0]
+    elif config.guidance.method == 'code_grad_final_general_i2i':
+        pipe = CoDeGradSDFinalI2IGeneral.from_pretrained(
+            model_id, torch_dtype=torch.float16).to(device)
+        pipe.set_guidance(config.guidance.guidance_scale)
+        pipe.set_guidance_method(config.guidance.guidance_method)
+        pipe.set_start_time(config.guidance.start_time)
+        pipe.set_end_time(config.guidance.end_time)
+        pipe.set_do_clustering(config.guidance.do_clustering)
+        pipe.set_grad_blocksize(config.guidance.guidance_blocksize)
+        # if 'batch_size_grad' in config.guidance and config.guidance.batch_size_grad is not None:
+        #     pipe.set_batch_size_grad(config.guidance.batch_size_grad)
+        if config.guidance.do_clustering:
+            pipe.set_clustering_method(config.guidance.clustering_method)
+        pipe.set_sampling(config.guidance.sampling)
+        if config.guidance.sampling != 'greedy':
+            pipe.set_temp(config.guidance.temp)
+        if config.guidance.scorer == 'compress':
+            pipe.set_zoo_method(config.guidance.zoo_method)
+            pipe.set_zoo_n_sample(config.guidance.zoo_n_sample)
+        if isinstance(config.guidance.num_samples, str) and 'var' in config.guidance.num_samples:
+            pipe.set_samples_schedule(config.guidance.samples_schedule)
+            config.guidance.num_samples = config.guidance.samples_schedule[0]
     elif config.guidance.method == 'code_grad_new_variant':
         pipe = CoDeGradNewSDVariant.from_pretrained(
             model_id, torch_dtype=torch.float16).to(device)
@@ -259,7 +290,7 @@ def run_experiment(config):
     elif config.guidance.scorer == 'pickscore':
         scorer = PickScoreScorer(device=device)
     elif config.guidance.scorer == 'multireward':
-        scorer = MultiReward(config.guidance.scorer1,config.guidance.scorer2,config.guidance.scorer_weight,device=device)
+        scorer = MultiReward(config.guidance.scorer1,config.guidance.scorer2,config.guidance.scorer_weight_1,config.guidance.scorer_weight_2,device=device)
     else:
         scorer = HPSScorer()
 
@@ -303,7 +334,8 @@ def run_experiment(config):
         }
     
 
-    if isinstance(scorer, ClipScorer) and config.guidance.scorer != 'strokegen':
+    if isinstance(scorer, ClipScorer) and config.guidance.scorer != 'strokegen' or isinstance(pipe,CoDeGradSDFinalI2IGeneral) or \
+        isinstance(pipe,CoDeSDPipelineI2I):
         # target_dir = [x for x in Path(
         #     '../assets/style_folder/styles').iterdir() if x.is_file()]
         
@@ -346,7 +378,7 @@ def run_experiment(config):
     start_time = time.time()
     if isinstance(pipe, CoDeSDPipelineI2I) or isinstance(pipe, SDPipelineI2I)\
         or isinstance(pipe, BoNSDPipelineI2I) or isinstance(pipe, GradSDPipelineI2I) or isinstance(pipe, GradSDPipelineI2I_mpgd)\
-        or isinstance(pipe, GradCoDeSDPipelineI2I):
+        or isinstance(pipe, GradCoDeSDPipelineI2I) or isinstance(pipe,CoDeGradSDFinalI2IGeneral):
 
         # if config.input_image:
         # if (isinstance(scorer, FaceRecognitionScorer) or isinstance(scorer, ClipScorer)) or isinstance(scorer, CompressibilityScorer):
@@ -412,6 +444,7 @@ def run_experiment(config):
 
                         curr_target = copy.deepcopy(loaded_img)
                         curr_target = encode(curr_target, pipe.vae)
+                        
 
                         noise = torch.randn(curr_target.shape).to(pipe.device)
                         if percent_noise > 0.999:

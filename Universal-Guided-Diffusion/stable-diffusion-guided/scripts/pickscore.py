@@ -1,28 +1,50 @@
-import sys
-import os
+import argparse, os, sys, glob
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 import cv2
-import PIL
 import json
 import torch
-import random
 import numpy as np
-import torchvision
-import argparse
-import torch.nn as nn
+from omegaconf import OmegaConf
+from PIL import Image
+from tqdm import tqdm, trange
+from imwatermark import WatermarkEncoder
+from itertools import islice
+from einops import rearrange
+from torchvision.utils import make_grid
+import time
+from pytorch_lightning import seed_everything
+from torch import autocast
+from contextlib import contextmanager, nullcontext
 
+from ldm.util import instantiate_from_config
+from ldm.models.diffusion.ddim import DDIMSampler
+from ldm.models.diffusion.plms import PLMSSampler
+
+from ldm.models.diffusion.ddim_with_grad import DDIMSamplerWithGrad
+
+from diffusers.pipelines.stable_diffusion.safety_checker import StableDiffusionSafetyChecker
+from transformers import AutoFeatureExtractor
+
+from torchvision import transforms, utils
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
+from torch.utils.data import Subset
+from torch.optim import SGD, Adam, AdamW
+import PIL
+from torch.utils import data
 from pathlib import Path
 from PIL import Image
-from omegaconf import OmegaConf
-from torch.utils import data
-from itertools import islice
-from helper import OptimizerDetails
 from torchvision import transforms, utils
-from pytorch_lightning import seed_everything
-from ldm.util import instantiate_from_config
-from transformers import CLIPModel, AutoFeatureExtractor
-from ldm.models.diffusion.ddim_with_grad import DDIMSamplerWithGrad
-from diffusers.pipelines.stable_diffusion.safety_checker import StableDiffusionSafetyChecker
+import random
+from helper import OptimizerDetails
+import clip
+import os
+import inspect
+import torchvision.transforms.functional as TF
+from torchvision.datasets import ImageFolder
+
+from transformers import AutoModel, CLIPProcessor
 
 ASSETS_PATH = Path("../../BoN/assets/")
 
@@ -137,128 +159,101 @@ def cycle(dl):
 import os
 import errno
 def create_folder(path):
-    try:
-        os.mkdir(path)
-    except OSError as exc:
-        if exc.errno != errno.EEXIST:
-            raise
-        pass
+    path = Path(path)
+    if not Path.exists(path):
+        Path.mkdir(path, exist_ok=True, parents=True)
+    # try:
+    #     os.mkdir(path)
+    # except OSError as exc:
+    #     if exc.errno != errno.EEXIST:
+    #         raise
+    #     pass
 
-
-class MLPDiff(nn.Module):
-    def __init__(self):
+class PickScore(nn.Module):
+    def __init__(self, model,device=torch.device("cuda"),dtype=torch.float32):
         super().__init__()
-        self.layers = nn.Sequential(
-            nn.Linear(768, 1024),
-            nn.Dropout(0.2),
-            nn.Linear(1024, 128),
-            nn.Dropout(0.2),
-            nn.Linear(128, 64),
-            nn.Dropout(0.1),
-            nn.Linear(64, 16),
-            nn.Linear(16, 1),
-        )
-
-
-    def forward(self, embed):
-        return self.layers(embed)
-
-
-class AestheticScorerDiff(torch.nn.Module):
-    def __init__(self, dtype):
-        super().__init__()
-        self.clip = CLIPModel.from_pretrained("openai/clip-vit-large-patch14")
-        self.mlp = MLPDiff()
-        state_dict = torch.load(ASSETS_PATH.joinpath("sac+logos+ava1-l14-linearMSE.pth"))
-        self.mlp.load_state_dict(state_dict)
+        
+        self.processor = CLIPProcessor.from_pretrained("openai/clip-vit-large-patch14")
+        self.device = device
         self.dtype = dtype
-        self.eval()
 
-    def __call__(self, images):
-        device = next(self.parameters()).device
-        embed = self.clip.get_image_features(pixel_values=images)
-        embed = embed / torch.linalg.vector_norm(embed, dim=-1, keepdim=True)
-        return self.mlp(embed).squeeze(1)
-    
-class AestheticScorer(torch.nn.Module):
-    
-    def __init__(self,
-                 aesthetic_target=None,
-                 device=None,
-                 accelerator=None,
-                 torch_dtype=None):
-        super().__init__()
+        checkpoint_path = "yuvalkirstain/PickScore_v1"
+        # checkpoint_path = f"{os.path.expanduser('~')}/.cache/PickScore_v1"
+        self.model = AutoModel.from_pretrained(checkpoint_path).eval().to(self.device, dtype=self.dtype)
 
-        self.aesthetic_target = aesthetic_target
-
-        self.target_size = 224
-        self.normalize = torchvision.transforms.Normalize(mean=[0.48145466, 0.4578275, 0.40821073],
+        self.target_size =  224
+        self.normalize = transforms.Normalize(mean=[0.48145466, 0.4578275, 0.40821073],
                                                     std=[0.26862954, 0.26130258, 0.27577711])
         
-        self.scorer = AestheticScorerDiff(dtype=torch_dtype).to(device, dtype=torch_dtype)
 
-    def score(self, im_pix_un):
-
-        if isinstance(im_pix_un, Image.Image):
-            im_pix_un = transforms.ToTensor()(im_pix_un)
-            im_pix_un = im_pix_un.unsqueeze(0)
-
-        im_pix = ((im_pix_un / 2) + 0.5).clamp(0, 1) 
-        im_pix = torchvision.transforms.Resize(self.target_size)(im_pix)
-        im_pix = self.normalize(im_pix).to(im_pix_un.dtype)
-        rewards = self.scorer(im_pix)
-
-        return rewards
-
-    def forward(self, im_pix_un, y, return_score=False):
+    def forward(self, images, prompts):
+        text_inputs = self.processor(
+            text=prompts,
+            padding=True,
+            truncation=True,
+            max_length=77,
+            return_tensors="pt",
+        ).to(self.device)
+        text_embeds = self.model.get_text_features(**text_inputs)
+        text_embeds = text_embeds / torch.norm(text_embeds, dim=-1, keepdim=True)
         
-        if return_score:
-            return self.score(im_pix_un)
-        
-        rewards = self.score(im_pix_un)
-        if self.aesthetic_target is None: # default maximization
-            loss = -1 * rewards
-        else:
-            # using L1 to keep on same scale
-            loss = abs(rewards - self.aesthetic_target)
-        return loss
+        if images.min() < 0: # normalize unnormalized images
+            images = ((images / 2) + 0.5).clamp(0, 1)
+
+        inputs = transforms.Resize(self.target_size)(images)
+        inputs = self.normalize(inputs).to(self.device,self.dtype)
+        image_embeds = self.model.get_image_features(pixel_values=inputs)
+        image_embeds = image_embeds / torch.norm(image_embeds, dim=-1, keepdim=True)
+        logits_per_image = image_embeds @ text_embeds.T
+        scores = torch.diagonal(logits_per_image)
+
+        return -1 * scores
+
 
 def get_optimation_details(args):
+    clip_model, clip_preprocess = clip.load("RN50")
+    print(clip_preprocess)
+    clip_model.eval()
+    for param in clip_model.parameters():
+        param.requires_grad = False
 
-    l_func = AestheticScorer(device='cuda')
+    l_func = PickScore(clip_model)
     l_func.eval()
     for param in l_func.parameters():
         param.requires_grad = False
-    l_func = torch.nn.DataParallel(l_func)
+    l_func = torch.nn.DataParallel(l_func).cuda()
 
-    # guidance_func = AestheticScorer(aesthetic_target = 10, device='cuda')
+
     operation = OptimizerDetails()
 
     operation.num_steps = args.optim_num_steps
     operation.operation_func = None
+    operation.other_guidance_func = None
 
     operation.optimizer = 'Adam'
     operation.lr = args.optim_lr
     operation.loss_func = l_func
+    operation.other_criterion = None
 
     operation.max_iters = args.optim_max_iters
     operation.loss_cutoff = args.optim_loss_cutoff
+    operation.tv_loss = args.optim_tv_loss
 
     operation.guidance_3 = args.optim_forward_guidance
     operation.guidance_2 = args.optim_backward_guidance
-
-    operation.optim_guidance_3_wt = args.optim_forward_guidance_wt
     operation.original_guidance = args.optim_original_conditioning
+    operation.optim_guidance_3_wt = args.optim_forward_guidance_wt
 
     operation.warm_start = args.optim_warm_start
     operation.print = args.optim_print
-    operation.print_every = 5
+    operation.print_every = 500
     operation.folder = args.optim_folder
 
-    return operation
+    return operation, l_func
 
 def main():
     parser = argparse.ArgumentParser()
+
     parser.add_argument(
         "--ddim_steps",
         type=int,
@@ -320,10 +315,8 @@ def main():
         help="the seed (for reproducible sampling)",
     )
 
-
     parser.add_argument("--optim_lr", default=1e-2, type=float)
     parser.add_argument('--optim_max_iters', type=int, default=1)
-    parser.add_argument('--optim_mask_type', type=int, default=1)
     parser.add_argument("--optim_loss_cutoff", default=0.00001, type=float)
     parser.add_argument('--optim_forward_guidance', action='store_true', default=False)
     parser.add_argument('--optim_backward_guidance', action='store_true', default=False)
@@ -334,17 +327,16 @@ def main():
     parser.add_argument('--optim_print', action='store_true', default=False)
     parser.add_argument('--optim_folder', default='./temp/')
     parser.add_argument("--optim_num_steps", nargs="+", default=[1], type=int)
-    parser.add_argument('--text_type', type=int, default=1)
     parser.add_argument("--text", default=None)
+    parser.add_argument('--text_type', type=int, default=1)
     parser.add_argument("--batch_size", default=1, type=int)
-    parser.add_argument('--face_folder', default='./data/face_data')
-
-    parser.add_argument('--fr_crop', action='store_true')
-    parser.add_argument('--center_face', action='store_true')
     parser.add_argument("--trials", default=50, type=int)
+    parser.add_argument('--style_folder', default='./data/style_folder/')
     parser.add_argument("--indexes", nargs="+", default=[0, 1, 2], type=int)
+    parser.add_argument("--prompt_indexes", nargs="+", default=[0, 1, 2], type=int)
 
     opt = parser.parse_args()
+
     results_folder = opt.optim_folder
     create_folder(results_folder)
 
@@ -360,101 +352,119 @@ def main():
 
 
     sampler = DDIMSamplerWithGrad(model)
-    operation = get_optimation_details(opt)
 
-    image_size = 256
+    operation, l_func = get_optimation_details(opt)
+
+    # text = []
+    # if opt.text != None:
+    #     text.append(opt.text)
+    # else:
+    #     if opt.text_type == 1:
+    #         text.append("A colorful photo of a eiffel tower")
+    #     elif opt.text_type == 2:
+    #         text.append("A fantasy photo of a lonely road")
+    #     elif opt.text_type == 3:
+    #         text.append("portrait of a woman")
+    #     elif opt.text_type == 4:
+    #         text.append("A fantasy photo of volcanoes")
+
+
+
+    torch.set_grad_enabled(False)
+
     transform = transforms.Compose([
-        transforms.Resize((image_size, image_size)),
         transforms.ToTensor(),
         transforms.Lambda(lambda t: (t * 2) - 1)
     ])
 
     batch_size = opt.batch_size
+    ds = ImageFolder(root=opt.style_folder, transform=transform)
+    dl = data.DataLoader(ds, batch_size=batch_size, shuffle=False, pin_memory=True, num_workers=16,
+                         drop_last=True)
 
-    torch.set_grad_enabled(False)
-
-    # Load prompts
-    with open(ASSETS_PATH.joinpath('eval_simple_animals.txt'), 'r') as fp:
+    with open(ASSETS_PATH.joinpath('hps_v2_all_eval.txt'), 'r') as fp:
         prompts = [line.strip() for line in fp.readlines()]
 
     # prompts = [opt.text]
 
-    for prompt in prompts[opt.indexes]:
+    for idx, prompt in enumerate(prompts):
+        
+        if idx not in opt.prompt_indexes:
+            continue
 
-        print(prompt)
-
-        # Run the pipeline
-
-        offset = 0
-        num_images_per_prompt = opt.trials
-
-        savepath = Path(results_folder).joinpath(prompt)
-        if Path.exists(savepath):
-
-            images = [x for x in savepath.iterdir() if x.suffix == '.png']
-            num_gen_images = len(images)
-            if num_gen_images == num_images_per_prompt:
-                print(f'Images found. Skipping prompt.')
-                continue
-
-            elif num_gen_images < num_images_per_prompt:
-                offset = num_gen_images
-                num_images_per_prompt -= num_gen_images
-                print(f'Found {num_gen_images} images. Generating {num_images_per_prompt} more.')
-
-
-        if not Path.exists(savepath):
-            Path.mkdir(savepath, exist_ok=True, parents=True)
+        text = [prompt]
 
         torch.cuda.empty_cache()
 
-        # rewards = []
+        for n, d in enumerate(dl, 0):
+            if n in opt.indexes:
 
-        uc = None
-        if opt.scale != 1.0:
-            uc = model.module.get_learned_conditioning(batch_size * [""])
-        c = model.module.get_learned_conditioning(batch_size * [prompt])
-        for multiple_tries in range(num_images_per_prompt):
-            shape = [opt.C, opt.H // opt.f, opt.W // opt.f]
-            samples_ddim, start_zt = sampler.sample(S=opt.ddim_steps,
-                                                conditioning=c,
-                                                batch_size=batch_size,
-                                                shape=shape,
-                                                verbose=False,
-                                                unconditional_guidance_scale=opt.scale,
-                                                unconditional_conditioning=uc,
-                                                eta=opt.ddim_eta,
-                                                operated_image=None,
-                                                operation=operation)
+                num_images_per_prompt = opt.trials
 
-            x_samples_ddim = model.module.decode_first_stage(samples_ddim)
-            x_samples_ddim = torch.clamp((x_samples_ddim + 1.0) / 2.0, min=0.0, max=1.0)
+                offset = 0
+                savepath = Path(results_folder).joinpath("images").joinpath(text[0])
+                if Path.exists(savepath):
 
-            reward = operation.loss_func(x_samples_ddim, None, return_score=True)
+                    images = [x for x in savepath.iterdir() if x.suffix == '.png']
+                    num_gen_images = len(images)
+                    if num_gen_images >= num_images_per_prompt:
+                        print(f'Images found. Skipping prompt.')
+                        continue
 
-            # rewards.extend(reward.detach().cpu().tolist())
+                    elif num_gen_images < num_images_per_prompt:
+                        offset = num_gen_images
+                        num_images_per_prompt -= num_gen_images
+                        print(f'Found {num_gen_images} images. Generating {num_images_per_prompt} more.')
 
-            utils.save_image(x_samples_ddim, f'{savepath}/new_img_{multiple_tries + offset}.png')
+                if not Path.exists(savepath):
+                    Path.mkdir(savepath, exist_ok=True, parents=True)
 
-            if Path.exists(savepath.joinpath("rewards.json")): # append rewards to file
+                uc = None
+                if opt.scale != 1.0:
+                    uc = model.module.get_learned_conditioning(batch_size * [""])
+                c = model.module.get_learned_conditioning(text)
 
-                rewards = None
-                with open(savepath.joinpath("rewards.json"), 'r') as fp:
-                    rewards = json.load(fp)
-                
-                rewards.extend(reward.detach().cpu().tolist())
+                for multiple_tries in range(num_images_per_prompt):
+                    shape = [opt.C, opt.H // opt.f, opt.W // opt.f]
+                    samples_ddim, start_zt = sampler.sample(S=opt.ddim_steps,
+                                                    conditioning=c,
+                                                    batch_size=batch_size,
+                                                    shape=shape,
+                                                    verbose=False,
+                                                    unconditional_guidance_scale=opt.scale,
+                                                    unconditional_conditioning=uc,
+                                                    eta=opt.ddim_eta,
+                                                    operated_image=prompt,
+                                                    operation=operation)
 
-                with open(savepath.joinpath("rewards.json"), 'w') as fp:
-                    json.dump(rewards, fp)
+                    x_samples_ddim = model.module.decode_first_stage(samples_ddim)
+                    x_samples_ddim = torch.clamp((x_samples_ddim + 1.0) / 2.0, min=0.0, max=1.0)
 
-            else: # create new rewards file
+                    utils.save_image(x_samples_ddim, savepath.joinpath(f'{multiple_tries + offset}.png'))
 
-                rewards = []
-                rewards.extend(reward.detach().cpu().tolist())
+                    # print(x_samples_ddim.shape)
+                    # print(clip_encoded.shape)
 
-                with open(savepath.joinpath("rewards.json"), 'w') as fp:
-                    json.dump(rewards, fp)
+                    reward = - operation.loss_func(x_samples_ddim, prompt).squeeze(0)
 
+                    if Path.exists(savepath.joinpath("rewards.json")): # append rewards to file
+
+                        rewards = None
+                        with open(savepath.joinpath("rewards.json"), 'r') as fp:
+                            rewards = json.load(fp)
+                        
+                        rewards.extend([reward.detach().cpu().item()])
+
+                        with open(savepath.joinpath("rewards.json"), 'w') as fp:
+                            json.dump(rewards, fp)
+
+                    else: # create new rewards file
+
+                        rewards = []
+                        rewards.extend([reward.detach().cpu().item()])
+
+                        with open(savepath.joinpath("rewards.json"), 'w') as fp:
+                            json.dump(rewards, fp)
 
 if __name__ == "__main__":
     main()

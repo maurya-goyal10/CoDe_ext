@@ -6,7 +6,7 @@ from PIL import Image
 from tqdm.auto import tqdm
 from pathlib import Path
 
-_SCORERS = ['aesthetic'] # ['strokegen', 'facedetector', 'styletransfer'] 'strokegen', 'facedetector'
+_SCORERS = ['multireward'] # ['strokegen', 'facedetector', 'styletransfer'] 'strokegen', 'facedetector'
 
 _MAP_UG = {
     'styletransfer': {
@@ -38,7 +38,7 @@ def main():
     # _SCORERS = ['pickscore'] # ['strokegen', 'facedetector', 'styletransfer'] 'strokegen', 'facedetector'
     for scorer in _SCORERS:
 
-        scorer_path = outputs_path.joinpath(f'uncond2_{scorer}')
+        scorer_path = outputs_path.joinpath(f'uncond_{scorer}')
 
         uncond_rewards[scorer] = dict()
 
@@ -61,218 +61,62 @@ def main():
     perf = dict()
 
     # name_file = 'perf_ccode_b1'
-    name_file = 'ablations/table_1_aesthetic_new'
+    name_file = 'ablations/multireward_code'
     if Path.exists(Path(f'{name_file}.json')):
         with open(f'{name_file}.json', 'r') as fp:
             perf = json.load(fp)
           
     # d = [
-    #     'code_grad_final_generalvar4reviiiiiii_multinomial_b5_gb5_temp500_st7_et0_FreeDoM_pickscore_gs2',
-    #     'code_grad_final_generalvar4reviiiiiii_multinomial_b5_gb5_temp1000_st7_et0_FreeDoM_pickscore_gs2',
-    #     'code_grad_final_generalvar4reviiiiiii_multinomial_b5_gb5_temp2000_st7_et0_FreeDoM_pickscore_gs2',
-    #     'code_grad_final_generalvar4reviiiiiii_multinomial_b5_gb5_temp4000_st7_et0_FreeDoM_pickscore_gs2',
-    #     'code_grad_final_generalvar4reviiiiiii_multinomial_b5_gb5_temp5000_st7_et0_FreeDoM_pickscore_gs2',
-    #     'code_grad_final_generalvar4reviiiiiii_multinomial_b5_gb5_temp7000_st7_et0_FreeDoM_pickscore_gs2',
-    #     'code_grad_final_generalvar4reviiiiiii_multinomial_b5_gb5_temp10000_st7_et0_FreeDoM_pickscore_gs2',
-    # ]  
-    # d = [
-    #     'mpgd_ddim100_tt1_rho75_reward_aesthetic',
-    #     'FreeDoM_aesthetic_rho2_aesthetic',
-    #     'code_grad_final_generalvar4reviiiiii_multinomial_b5_gb5_temp1000_st6_et0_FreeDoM_aesthetic_gs2',
-    # ]
-    # d = [
-    #     'uncond2_pickscore',
-    #     'code4_greedy_b5_pickscore',
-    #     'code40_greedy_b5_pickscore',
-    #     'code_grad_final_general4_greedy_b5_gb5_st7_et0_FreeDoM_pickscore_gs2',
+    #     'code_grad_final_general4_greedy_b5_gb5_st10_et0_FreeDoM_aesthetic0_pickscore1_multireward_gs2',
+    #     'code_grad_final_general4_greedy_b5_gb5_st10_et0_FreeDoM_aesthetic1_pickscore0_multireward_gs2',
+    #     'code_grad_final_general4_greedy_b5_gb5_st10_et0_FreeDoM_aesthetic1_pickscore10_multireward_gs2',
+    #     'code_grad_final_general4_greedy_b5_gb5_st10_et0_FreeDoM_aesthetic1_pickscore15_multireward_gs2',
+    #     'code_grad_final_general4_greedy_b5_gb5_st10_et0_FreeDoM_aesthetic1_pickscore20_multireward_gs2',
+    #     'code_grad_final_general4_greedy_b5_gb5_st10_et0_FreeDoM_aesthetic1_pickscore25_multireward_gs2',
+    #     'code_grad_final_general4_greedy_b5_gb5_st10_et0_FreeDoM_aesthetic1_pickscore2_multireward_gs2',
+    #     'code_grad_final_general4_greedy_b5_gb5_st10_et0_FreeDoM_aesthetic1_pickscore3_multireward_gs2',
+    #     'code_grad_final_general4_greedy_b5_gb5_st10_et0_FreeDoM_aesthetic1_pickscore5_multireward_gs2',
+    #     'code_grad_final_general4_greedy_b5_gb5_st10_et0_FreeDoM_aesthetic1_pickscore30_multireward_gs2',
+    #     'code_grad_final_general4_greedy_b5_gb5_st10_et0_FreeDoM_aesthetic1_pickscore50_multireward_gs2',
+    #     'code_grad_final_general4_greedy_b5_gb5_st10_et0_FreeDoM_aesthetic1_pickscore70_multireward_gs2',
+    #     'code_grad_final_general4_greedy_b5_gb5_st10_et0_FreeDoM_aesthetic1_pickscore100_multireward_gs2',
+    #     'code_grad_final_general4_greedy_b5_gb5_st10_et0_FreeDoM_aesthetic1_pickscore150_multireward_gs2',
+    #     'code_grad_final_general4_greedy_b5_gb5_st10_et0_FreeDoM_aesthetic1_pickscore200_multireward_gs2',
+    #     'code_grad_final_general4_greedy_b5_gb5_st10_et0_FreeDoM_aesthetic1_pickscore250_multireward_gs2',
+    #     'code_grad_final_general4_greedy_b5_gb5_st10_et0_FreeDoM_aesthetic1_pickscore300_multireward_gs2',
+    #     'code_grad_final_general4_greedy_b5_gb5_st10_et0_FreeDoM_aesthetic1_pickscore350_multireward_gs2',
+    #     'code_grad_final_general4_greedy_b5_gb5_st10_et0_FreeDoM_aesthetic1_pickscore400_multireward_gs2',
+    #     'code_grad_final_general4_greedy_b5_gb5_st10_et0_FreeDoM_aesthetic1_pickscore450_multireward_gs2',
+    #     'code_grad_final_general4_greedy_b5_gb5_st10_et0_FreeDoM_aesthetic1_pickscore500_multireward_gs2',
+    #     'code_grad_final_general4_greedy_b5_gb5_st10_et0_FreeDoM_aesthetic1_pickscore750_multireward_gs2',
+    #     'code_grad_final_general4_greedy_b5_gb5_st10_et0_FreeDoM_aesthetic1_pickscore1000_multireward_gs2',
     # ]
     
-    # table_1_aesthetic
     d = [
-        'uncond_aesthetic',
-        'code4_greedy_b5_aesthetic',
-        'code40_greedy_b5_aesthetic',
-        'code_grad_final_general4_greedy_b5_gb5_st6_et0_FreeDoM_aesthetic_gs2',
-        'code_grad_final_general4_multinomial_b5_gb5_temp1000_st6_et0_FreeDoM_aesthetic_gs2',
-        'code_grad_final_generalvar4reviiiiii_greedy_b5_gb5_st6_et0_FreeDoM_aesthetic_gs2',
-        'code_grad_final_generalvar4reviiiiii_multinomial_b5_gb5_temp1000_st6_et0_FreeDoM_aesthetic_gs2',
-        'code_grad_final_generalvar4reviiiiii_multinomial_b5_gb5_temp1000_st6_et0_KMeans_FreeDoM_aesthetic_gs20'
-        ]
-    # d = ['code_grad_final_general4_greedy_b5_gb5_st6_et0_FreeDoM_aesthetic_gs2',
-    #      'code_grad_final_general4_multinomial_b5_gb5_temp1000_st6_et0_FreeDoM_aesthetic_gs2',
-    #      'code_grad_final_generalvar4reviiiiii_multinomial_b5_gb5_temp1000_st6_et0_FreeDoM_aesthetic_gs2']
-    # d = ['code4_b5_aesthetic',
-    #      'code4_multinomial_temp200_b5_aesthetic',
-    #      'code4_multinomial_temp500_b5_aesthetic',
-    #      'code4_multinomial_temp750_b5_aesthetic',
-    #      'code4_multinomial_temp1000_b5_aesthetic',
-    #      'code4_multinomial_temp2000_b5_aesthetic',
-    #      'code4_multinomial_temp3000_b5_aesthetic',
-    #      'code4_multinomial_temp4000_b5_aesthetic',
-    #      'code4_multinomial_temp5000_b5_aesthetic',
-    #      'code4_multinomial_temp6000_b5_aesthetic',
-    #      'code4_multinomial_temp7000_b5_aesthetic',
-    #      'code4_multinomial_temp8000_b5_aesthetic',
-    #      'code4_multinomial_temp9000_b5_aesthetic',
-    #      'code4_multinomial_temp10000_b5_aesthetic',
-    #      'code4_multinomial_temp15000_b5_aesthetic',]
-    
-    # d = ['code40_b5_aesthetic',
-    #      'code_grad_final_general4_greedy_b5_gb5_st6_et0_FreeDoM_aesthetic_gs2',
-    #      'code_grad_final_generalvar4_greedy_b5_gb5_st6_et0_FreeDoM_aesthetic_gs2',
-    #      'code_grad_final_generalvar4i_greedy_b5_gb5_st6_et0_FreeDoM_aesthetic_gs2',
-    #      'code_grad_final_generalvar4ii_greedy_b5_gb5_st6_et0_FreeDoM_aesthetic_gs2',
-    #      'code_grad_final_generalvar4iii_greedy_b5_gb5_st6_et0_FreeDoM_aesthetic_gs2',
-    #      'code_grad_final_generalvar4iiii_greedy_b5_gb5_st6_et0_FreeDoM_aesthetic_gs2',
-    #      'code_grad_final_generalvar4iiiii_greedy_b5_gb5_st6_et0_FreeDoM_aesthetic_gs2',
-    #      'code_grad_final_generalvar4rev_greedy_b5_gb5_st6_et0_FreeDoM_aesthetic_gs2',
-    #      'code_grad_final_generalvar4revi_greedy_b5_gb5_st6_et0_FreeDoM_aesthetic_gs2',
-    #      'code_grad_final_generalvar4revii_greedy_b5_gb5_st6_et0_FreeDoM_aesthetic_gs2',
-    #      'code_grad_final_generalvar4reviii_greedy_b5_gb5_st6_et0_FreeDoM_aesthetic_gs2',
-    #      'code_grad_final_generalvar4reviiii_greedy_b5_gb5_st6_et0_FreeDoM_aesthetic_gs2',
-    #      'code_grad_final_generalvar4reviiiii_greedy_b5_gb5_st6_et0_FreeDoM_aesthetic_gs2',
-    #      'code_grad_final_generalvar4reviiiiii_greedy_b5_gb5_st6_et0_FreeDoM_aesthetic_gs2',
-    #      'code_grad_final_generalvar4reviiiiiii_greedy_b5_gb5_st6_et0_FreeDoM_aesthetic_gs2',
-    #      ]
-    
-    # d = ['code40_b5_pickscore',
-    #      'code_grad_final_general4_greedy_b5_gb5_st10_et0_FreeDoM_pickscore_gs2',
-    #      'code_grad_final_generalvar4_greedy_b5_gb5_st10_et0_FreeDoM_pickscore_gs2',
-    #      'code_grad_final_generalvar4i_greedy_b5_gb5_st10_et0_FreeDoM_pickscore_gs2',
-    #      'code_grad_final_generalvar4ii_greedy_b5_gb5_st10_et0_FreeDoM_pickscore_gs2',
-    #      'code_grad_final_generalvar4iii_greedy_b5_gb5_st10_et0_FreeDoM_pickscore_gs2',
-    #      'code_grad_final_generalvar4iiii_greedy_b5_gb5_st10_et0_FreeDoM_pickscore_gs2',
-    #      'code_grad_final_generalvar4iiiii_greedy_b5_gb5_st10_et0_FreeDoM_pickscore_gs2',
-    #      'code_grad_final_generalvar4rev_greedy_b5_gb5_st10_et0_FreeDoM_pickscore_gs2',
-    #      'code_grad_final_generalvar4revi_greedy_b5_gb5_st10_et0_FreeDoM_pickscore_gs2',
-    #      'code_grad_final_generalvar4revii_greedy_b5_gb5_st10_et0_FreeDoM_pickscore_gs2',
-    #      'code_grad_final_generalvar4reviii_greedy_b5_gb5_st10_et0_FreeDoM_pickscore_gs2',
-    #      'code_grad_final_generalvar4reviiii_greedy_b5_gb5_st10_et0_FreeDoM_pickscore_gs2',
-    #      'code_grad_final_generalvar4reviiiii_greedy_b5_gb5_st10_et0_FreeDoM_pickscore_gs2',
-    #      'code_grad_final_generalvar4reviiiiii_greedy_b5_gb5_st10_et0_FreeDoM_pickscore_gs2',
-    #      'code_grad_final_generalvar4reviiiiiii_greedy_b5_gb5_st10_et0_FreeDoM_pickscore_gs2',
-    #      'code_grad_final_generalvar4new_greedy_b5_gb5_st10_et0_FreeDoM_pickscore_gs2',
-    #      'code_grad_final_generalvar4newi_greedy_b5_gb5_st10_et0_FreeDoM_pickscore_gs2',
-    #      'code_grad_final_generalvar4newii_greedy_b5_gb5_st10_et0_FreeDoM_pickscore_gs2',
-    #      'code_grad_final_generalvar4newii_greedy_b5_gb5_st10_et0_FreeDoM_pickscore_gs2',
-    #      'code_grad_final_generalvar4newiii_greedy_b5_gb5_st10_et0_FreeDoM_pickscore_gs2',
-    #      ]
-            
-    # d = ['code40_greedy_b5_pickscore',
-    #     'code4_greedy_b5_pickscore',
-    #     'uncond2_pickscore',
-    #     'code_grad_final_general4_greedy_b5_gb5_st10_et0_FreeDoM_pickscore_gs2',
-    #     'code_grad_final_general4_greedy_b5_gb5_st9_et0_FreeDoM_pickscore_gs2',
-    #     'code_grad_final_general4_greedy_b5_gb5_st8_et0_FreeDoM_pickscore_gs2',
-    #     'code_grad_final_general4_greedy_b5_gb5_st95_et0_FreeDoM_pickscore_gs2',
-    #     ]
-
-    # d = ['code_grad4_b5_st7_et3_aesthetic_gs0',
-    #      'code_grad4_b5_st7_et3_aesthetic_gs3',
-    #      'code_grad4_b5_st7_et3_aesthetic_gs5',
-    #      'code_grad_new4_b5_st7_et3_aesthetic_gs3',
-    #      'code_grad_new4_b5_st7_et3_aesthetic_gs5',
-    #      'code_grad_new_variant4_b5_st7_et3_aesthetic_gs3',
-    #      'code_grad_new_variant4_b5_st7_et3_aesthetic_gs5',
-    #      'code40_b5_aesthetic']
-    # d = ['code_grad4_b5_st6_et2_aesthetic_gs5',
-    #      'code_grad1_b5_st6_et2_aesthetic_gs3',
-    #      'code_grad4_b5_st6_et2_aesthetic_gs3',
-    #      'code_grad4_b5_st7_et3_aesthetic_gs0',
-    #      'code40_b5_aesthetic',
-    #      'uncond2_aesthetic',
-    #      'DAS_alpha500_aesthetic',
-    #      'DAS_alpha1000_aesthetic']
-    # d = ['code40_greedy_b5_aesthetic',
-    #      'uncond2_aesthetic',
-    #      'code4_greedy_b5_aesthetic',
-    #      'code_grad_final_general4_greedy_b5_gb5_st6_et2_FreeDoM_aesthetic_gs3',
-    #      'code_grad_final_general4_greedy_b5_gb5_st6_et1_FreeDoM_aesthetic_gs2',
-    #      'code_grad_final_general4_greedy_b5_gb5_st6_et1_FreeDoM_aesthetic_gs3',
-    #      'code_grad_final_general4_greedy_b5_gb5_st7_et1_FreeDoM_aesthetic_gs2',
-    #      'code_grad_final_general4_greedy_b5_gb5_st7_et1_FreeDoM_aesthetic_gs3',
-    #      'code_grad_final_general4_greedy_b5_gb5_st7_et3_FreeDoM_aesthetic_gs3',
-    #      'code_grad_final_general4_greedy_b5_gb5_st6_et3_FreeDoM_aesthetic_gs3',
-    #      'code_grad_final_general4_greedy_b5_gb5_st7_et2_FreeDoM_aesthetic_gs2',
-    #      'code_grad_final_general4_greedy_b5_gb5_st8_et3_FreeDoM_aesthetic_gs3',
-    #      'code_grad_final_general4_greedy_b5_gb5_st8_et2_FreeDoM_aesthetic_gs2',
-    #      'code_grad_final_general4_greedy_b5_gb5_st8_et3_FreeDoM_aesthetic_gs2',
-    #      'code_grad_final_general4_greedy_b5_gb5_st8_et2_FreeDoM_aesthetic_gs3',
-    #      'code_grad_final_general4_greedy_b5_gb5_st7_et2_FreeDoM_aesthetic_gs3',
-    #      'code_grad_final_general4_greedy_b5_gb5_st6_et0_FreeDoM_aesthetic_gs2',
-    #      'code_grad_final_general4_greedy_b5_gb5_st7_et0_FreeDoM_aesthetic_gs2',
-    #      'code_grad_final_general4_greedy_b5_gb5_st8_et0_FreeDoM_aesthetic_gs2',
-    #      'code_grad_final_general4_greedy_b5_gb5_st8_et1_FreeDoM_aesthetic_gs2',
-    #      'code_grad_final_general4_greedy_b5_gb5_st9_et0_FreeDoM_aesthetic_gs15',
-    #      'code4_multinomial_temp1000_b5_aesthetic',
-    #     ]
-    
-    # d = ['code4_greedy_b5_aesthetic', 
-    #      'codevar4_greedy_b5_aesthetic',
-    #      'codevar4i_greedy_b5_aesthetic',
-    #      'codevar4ii_greedy_b5_aesthetic',
-    #      'codevar4iii_greedy_b5_aesthetic',
-    #      'codevar4iiii_greedy_b5_aesthetic',
-    #      'codevar4iiiii_greedy_b5_aesthetic',
-    #      'codevar4rev_greedy_b5_aesthetic',
-    #      'codevar4revi_greedy_b5_aesthetic',
-    #      'codevar4revii_greedy_b5_aesthetic',
-    #      'codevar4reviii_greedy_b5_aesthetic',
-    #      'codevar4reviiii_greedy_b5_aesthetic',
-    #      'codevar4reviiiii_greedy_b5_aesthetic',
-    #      'codevar4reviiiiii_greedy_b5_aesthetic',
-    #      'codevar4reviiiiiii_greedy_b5_aesthetic',
-    #     ]
-    
-    #ablations_compress_testing_
-    # d = [
-    #     # 'code4_greedy_b5_compress',
-    #     # 'code40_greedy_b5_compress',
-    #     # 'code_grad_final_general4_greedy_b5_gb5_st10_et0_antithetic_1_FreeDoM_compress_gs2',
-    #     # 'code_grad_final_general4_greedy_b5_gb5_st10_et0_antithetic_5_FreeDoM_compress_gs2',
-    #     # 'code_grad_final_general4_greedy_b5_gb5_st10_et0_antithetic_10_FreeDoM_compress_gs2',
-    #     # 'code_grad_final_general4_greedy_b5_gb5_st10_et0_antithetic_50_FreeDoM_compress_gs2',
-    # ]
-    
-    # ablation_pickscore_temp_newi_
-    # d = [
-    #     'code_grad_final_generalvar4newi_greedy_b5_gb5_st10_et0_FreeDoM_pickscore_gs2',
-    #     # 'code_grad_final_generalvar4newi_multinomial_b5_gb5_temp500_st10_et0_FreeDoM_pickscore_gs2',
-    #     # 'code_grad_final_generalvar4newi_multinomial_b5_gb5_temp1000_st10_et0_FreeDoM_pickscore_gs2',
-    #     # 'code_grad_final_generalvar4newi_multinomial_b5_gb5_temp2000_st10_et0_FreeDoM_pickscore_gs2',
-    #     'code_grad_final_generalvar4newi_multinomial_b5_gb5_temp3000_st10_et0_FreeDoM_pickscore_gs2',
-    #     # 'code_grad_final_generalvar4newi_multinomial_b5_gb5_temp4000_st10_et0_FreeDoM_pickscore_gs2',
-    #     # 'code_grad_final_generalvar4newi_multinomial_b5_gb5_temp5000_st10_et0_FreeDoM_pickscore_gs2',
-    #     # 'code_grad_final_generalvar4newi_multinomial_b5_gb5_temp7000_st10_et0_FreeDoM_pickscore_gs2',
-    #     # 'code_grad_final_generalvar4newi_multinomial_b5_gb5_temp10000_st10_et0_FreeDoM_pickscore_gs2',
-    #     # 'code_grad_final_generalvar4newi_multinomial_b5_gb5_temp12000_st10_et0_FreeDoM_pickscore_gs2',
-    #     # 'code_grad_final_generalvar4newi_multinomial_b5_gb5_temp15000_st10_et0_FreeDoM_pickscore_gs2',
-    #     # 'code_grad_final_generalvar4newi_multinomial_b5_gb5_temp16000_st10_et0_FreeDoM_pickscore_gs2',
-    #     # 'code_grad_final_generalvar4newi_multinomial_b5_gb5_temp18000_st10_et0_FreeDoM_pickscore_gs2',
-    #     # 'code_grad_final_generalvar4newi_multinomial_b5_gb5_temp20000_st10_et0_FreeDoM_pickscore_gs2',
-    #     'code_grad_final_generalvar4newi_multinomial_b5_gb5_temp25000_st10_et0_FreeDoM_pickscore_gs2',
-    #     'code_grad_final_generalvar4newi_multinomial_b5_gb5_temp30000_st10_et0_FreeDoM_pickscore_gs2',
-    #     'code_grad_final_generalvar4newi_multinomial_b5_gb5_temp40000_st10_et0_FreeDoM_pickscore_gs2',
-    #     'code_grad_final_generalvar4newi_multinomial_b5_gb5_temp50000_st10_et0_FreeDoM_pickscore_gs2',
-    #     'code_grad_final_generalvar4newi_multinomial_b5_gb5_temp100000_st10_et0_FreeDoM_pickscore_gs2',
-    # ]
-    
-    # table_1_pickscore
-    # d = [
-    #     # 'code40_greedy_b5_pickscore',
-    #     # 'code4_greedy_b5_pickscore',
-    #     'uncond2_pickscore',
-    #     # 'code_grad_final_general4_multinomial_b5_gb5_temp3000_st10_et0_FreeDoM_pickscore_gs2',
-    #     # 'code_grad_final_general4_greedy_b5_gb5_st10_et0_FreeDoM_pickscore_gs2',
-    #     # 'code_grad_final_generalvar4newi_multinomial_b5_gb5_temp3000_st10_et0_FreeDoM_pickscore_gs2',
-    #     # 'code_grad_final_generalvar4newi_multinomial_b5_gb5_temp3000_st10_et0_KMeans_FreeDoM_pickscore_gs20',
-    #     # 'code_grad_final_generalvar4newi_greedy_b5_gb5_st10_et0_FreeDoM_pickscore_gs2',
-    # ]
-    
-    # d = [
-    #     'code_grad_final_general4_greedy_b5_gb5_st10_et0_FreeDoM_pickscore_gs2',
-    #     'code_grad_final__general4_greedy_b5_gb5_st10_et0_FreeDoM_pickscore_gs2'
-    # ]
+        'code4_b5_aesthetic0_pickscore1_multireward',
+        'code4_greedy_b5_aesthetic1_pickscore0_multireward',
+        'code4_greedy_b5_aesthetic1_pickscore10_multireward',
+        'code4_greedy_b5_aesthetic1_pickscore15_multireward',
+        'code4_greedy_b5_aesthetic1_pickscore20_multireward',
+        'code4_greedy_b5_aesthetic1_pickscore25_multireward',
+        'code4_greedy_b5_aesthetic1_pickscore2_multireward',
+        'code4_greedy_b5_aesthetic1_pickscore3_multireward',
+        'code4_greedy_b5_aesthetic1_pickscore5_multireward',
+        'code4_greedy_b5_aesthetic1_pickscore30_multireward',
+        'code4_greedy_b5_aesthetic1_pickscore50_multireward',
+        'code4_greedy_b5_aesthetic1_pickscore70_multireward',
+        'code4_greedy_b5_aesthetic1_pickscore100_multireward',
+        'code4_greedy_b5_aesthetic1_pickscore150_multireward',
+        'code4_greedy_b5_aesthetic1_pickscore200_multireward',
+        'code4_greedy_b5_aesthetic1_pickscore250_multireward',
+        'code4_greedy_b5_aesthetic1_pickscore300_multireward',
+        'code4_greedy_b5_aesthetic1_pickscore350_multireward',
+        'code4_greedy_b5_aesthetic1_pickscore400_multireward',
+        'code4_greedy_b5_aesthetic1_pickscore450_multireward',
+        'code4_greedy_b5_aesthetic1_pickscore500_multireward',
+        'code4_greedy_b5_aesthetic1_pickscore750_multireward',
+        'code4_greedy_b5_aesthetic1_pickscore1000_multireward',
+    ]
 
     source_dirs = [x for x in outputs_path.iterdir() if Path.is_dir(x) and x.stem in d]
     # breakpoint()
@@ -306,6 +150,8 @@ def main():
         print(source_dir.stem)
 
         exp_rew = []
+        exp_rew_1 = []
+        exp_rew_2 = []
         time_taken_per_sample = []
         win_rate = []
         fids = []
@@ -335,22 +181,33 @@ def main():
                 with open(prompt_dir.joinpath("rewards.json"), 'r') as fp:
                     prompt_reward = json.load(fp)
                     
+                with open(prompt_dir.joinpath("rewards1.json"), 'r') as fp:
+                    prompt_reward_1 = json.load(fp)
+                    
+                with open(prompt_dir.joinpath("rewards2.json"), 'r') as fp:
+                    prompt_reward_2 = json.load(fp)
+                    
+                with open(prompt_dir.joinpath("time.json"),'r') as f:
+                    time_taken = json.load(f)
                     
                 print(f"{prompt_dir.stem} rewards are {prompt_reward}")
 
                 if len(prompt_reward) > len(uncond_rewards[scorer][target_key][prompt_dir.stem]):
                     prompt_reward = prompt_reward[:len(uncond_rewards[scorer][target_key][prompt_dir.stem])]
+                if len(prompt_reward_1) > len(uncond_rewards[scorer][target_key][prompt_dir.stem]):
+                    prompt_reward_1 = prompt_reward_1[:len(uncond_rewards[scorer][target_key][prompt_dir.stem])]
+                if len(prompt_reward_2) > len(uncond_rewards[scorer][target_key][prompt_dir.stem]):
+                    prompt_reward_2 = prompt_reward_2[:len(uncond_rewards[scorer][target_key][prompt_dir.stem])]
 
                 exp_rew.append(sum(prompt_reward)/len(prompt_reward))
+                exp_rew_1.append(sum(prompt_reward_1)/len(prompt_reward_1))
+                exp_rew_2.append(sum(prompt_reward_2)/len(prompt_reward_2))
                 win_rate.append((np.array(prompt_reward) > uncond_rewards[scorer][target_key][prompt_dir.stem][:len(prompt_reward)]).astype(int).sum() / len(prompt_reward))
-                  
-                # with open(prompt_dir.joinpath("time.json"),'r') as f:
-                #     time_taken = json.load(f)
-                # time_taken_per_sample.append(time_taken['time_taken']/time_taken['num_images'])
+                time_taken_per_sample.append(time_taken['time_taken']/time_taken['num_images'])
 
                 try:
                     # uncond_path_p = outputs_path.joinpath(f'uncond_{scorer}').joinpath(target_key).joinpath(f'images/{prompt_dir.stem}')
-                    uncond_path_p = outputs_path.joinpath(f'uncond2_{scorer}').joinpath(target_key).joinpath(f'{prompt_dir.stem}')
+                    uncond_path_p = outputs_path.joinpath(f'uncond_{scorer}').joinpath(target_key).joinpath(f'{prompt_dir.stem}')
                     
                     if 'rho' in source_dir.stem:
                         if 'mpgd' in source_dir.stem:
@@ -388,10 +245,12 @@ def main():
             perf[source_dir.stem] = dict()
 
         perf[source_dir.stem]['exp_rew'] = sum(exp_rew)/len(exp_rew)
+        perf[source_dir.stem]['exp_rew_1'] = sum(exp_rew_1)/len(exp_rew_1)
+        perf[source_dir.stem]['exp_rew_2'] = sum(exp_rew_2)/len(exp_rew_2)
         perf[source_dir.stem]['win_rate'] = sum(win_rate)/len(win_rate)
         perf[source_dir.stem]['fid'] = sum(fids)/len(fids)
         perf[source_dir.stem]['cmmd'] = sum(cmmds)/len(cmmds)
-        # perf[source_dir.stem]['time_taken_per_sample'] = sum(time_taken_per_sample)/(60.0*len(time_taken_per_sample))
+        perf[source_dir.stem]['time_taken_per_sample'] = sum(time_taken_per_sample)/(60.0*len(time_taken_per_sample))
         # perf[source_dir.stem]['ref_fid'] = sum(ref_fids)/len(ref_fids)
         # perf[source_dir.stem]['ref_cmmd'] = sum(ref_cmmds)/len(ref_cmmds)
         

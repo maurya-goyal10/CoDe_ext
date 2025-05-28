@@ -22,13 +22,14 @@ from guidance_scaling import scaling_guidance
 from torchopt.diff.zero_order import zero_order
 from torch.distributions import Normal
 
-class CoDeGradSDFinalGeneral(StableDiffusionPipeline):
+class CoDeGradSDFinalI2IGeneral(StableDiffusionPipeline):
     @torch.no_grad()
     def __call__(
         self,
         offset: int = 5,
         prompt: Union[str, List[str]] = None,
         height: Optional[int] = None,
+        percent_noise: float = 1.0,
         width: Optional[int] = None,
         num_inference_steps: int = 50,
         num_try: Optional[int] = 1,
@@ -200,7 +201,14 @@ class CoDeGradSDFinalGeneral(StableDiffusionPipeline):
             curr_samples = curr_samples.repeat(n_samples, 1, 1, 1) # (n_samples, 4, 64, 64)
             
             num_warmup_steps = len(timesteps) - num_inference_steps * self.scheduler.order
+            step_counter = 0
             for i, t in enumerate(timesteps):
+                
+                if t > 1000 * percent_noise:
+                    continue
+                print(f"percent_noise is {percent_noise} and t is {t} and curr_samples shape is {curr_samples.shape}")
+
+                step_counter += 1
                 
                 if getattr(self, 'samples_schedule', None) is not None:
                     # print(f"At time {t} the shape of curr samples is {curr_samples.shape}")
@@ -574,7 +582,7 @@ class CoDeGradSDFinalGeneral(StableDiffusionPipeline):
         return rewards.detach().cpu().tolist()
     
     def set_target(self, target_img):
-        if isinstance(self.scorer, ClipScorer):
+        if isinstance(self.scorer, ClipScorer) or isinstance(self.scorer, PickScoreScorer):
             target_img = torchvision.transforms.ToTensor()(target_img)
             self.target_img = self.scorer.encode(target_img.unsqueeze(0))
         else:
@@ -636,6 +644,7 @@ class CoDeGradSDFinalGeneral(StableDiffusionPipeline):
             
         # Process images
         im_pix = ((im_pix_un / 2) + 0.5).clamp(0, 1).cpu()
+        print(f"The shape of the image is: {im_pix.shape}")
         # print(im_pix.shape)
         
         # Compute rewards/loss based on scorer type

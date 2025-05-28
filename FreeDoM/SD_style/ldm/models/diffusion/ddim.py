@@ -22,6 +22,7 @@ to_tensor = torchvision.transforms.Compose([
 
 from .clip.base_clip import CLIPEncoder
 from ldm.models.diffusion.aesthetic.aesthetic_scorer import AestheticScorer
+from ldm.models.diffusion.pickscore.pickscore_scorer import PickScoreScorer
 
 from pathlib import Path
 
@@ -94,6 +95,8 @@ class DDIMSampler(object):
                unconditional_conditioning=None,
                style_ref_img_path=None,
                rho = 0.2,
+               prompt = None,
+               image_encoder = None,
                **kwargs
                ):
         if conditioning is not None:
@@ -112,7 +115,8 @@ class DDIMSampler(object):
         print(f'Data shape for DDIM sampling is {size}, eta {eta}')
 
         # self.image_encoder = CLIPEncoder(need_ref=True, ref_path=style_ref_img_path).cuda()
-        self.image_encoder = AestheticScorer().cuda()
+        # self.image_encoder = AestheticScorer().cuda()
+        self.image_encoder = image_encoder
 
         samples, intermediates = self.ddim_sampling(conditioning, size,
                                                     callback=callback,
@@ -128,8 +132,12 @@ class DDIMSampler(object):
                                                     log_every_t=log_every_t,
                                                     unconditional_guidance_scale=unconditional_guidance_scale,
                                                     unconditional_conditioning=unconditional_conditioning,
-                                                    rho = rho
+                                                    rho = rho,
+                                                    prompt = prompt
                                                     )
+        
+        del self.image_encoder
+        torch.cuda.empty_cache()
         return samples, intermediates
 
     # @torch.no_grad()
@@ -138,7 +146,7 @@ class DDIMSampler(object):
                       callback=None, timesteps=None, quantize_denoised=False,
                       mask=None, x0=None, img_callback=None, log_every_t=100,
                       temperature=1., noise_dropout=0., score_corrector=None, corrector_kwargs=None,
-                      unconditional_guidance_scale=1., unconditional_conditioning=None,rho=0.2):
+                      unconditional_guidance_scale=1., unconditional_conditioning=None,rho=0.2,prompt=None):
         device = self.model.betas.device
         b = shape[0]
         if x_T is None:
@@ -177,7 +185,7 @@ class DDIMSampler(object):
                                     corrector_kwargs=corrector_kwargs,
                                     unconditional_guidance_scale=unconditional_guidance_scale,
                                     unconditional_conditioning=unconditional_conditioning,
-                                    rho = rho)
+                                    rho = rho,prompt=prompt)
 
             img, pred_x0 = outs
 
@@ -206,13 +214,16 @@ class DDIMSampler(object):
             #     intermediates['pred_x0'].append(pred_x0)
             intermediates['x_inter'].append(img)
             intermediates['pred_x0'].append(pred_x0)
+            
+        del pred_x0,pred_x0_temp,pred_x0_torch
+        torch.cuda.empty_cache()
 
         return img, intermediates
     
     # @torch.no_grad()
     def p_sample_ddim_conditional(self, x, c, t, index, repeat_noise=False, use_original_steps=False, quantize_denoised=False,
                       temperature=1., noise_dropout=0., score_corrector=None, corrector_kwargs=None,
-                      unconditional_guidance_scale=1., unconditional_conditioning=None,start = 70, end = 30,rho=0.2):
+                      unconditional_guidance_scale=1., unconditional_conditioning=None,start = 70, end = 30,rho=0.2,prompt=None):
         b, *_, device = *x.shape, x.device
 
         x.requires_grad = True
@@ -279,12 +290,18 @@ class DDIMSampler(object):
                     # print(f"Shape of the residual is {residual.shape} and the residual is {residual}")
                     # print(f"the residual is {residual}")
                     norm = -1*torch.linalg.norm(residual)
+                elif isinstance(self.image_encoder,PickScoreScorer):
+                    # print("Aesthetic")
+                    residual = self.image_encoder.loss_fn(D_x0_t,prompt)
+                    # print(f"Shape of the residual is {residual.shape} and the residual is {residual}")
+                    # print(f"the residual is {residual}")
+                    norm = -1*torch.linalg.norm(residual)
                 else:
                     raise NotImplementedError("Image encoder not implemented")
                 # residual = self.image_encoder.get_gram_matrix_residual(D_x0_t)
                 # norm = torch.linalg.norm(residual)
 
-                norm_grad = torch.autograd.grad(outputs=norm, inputs=x)[0]
+                norm_grad = torch.autograd.grad(outputs=norm, inputs=x)[0].detach()
                 rho_scale = (correction * correction).mean().sqrt().item() * unconditional_guidance_scale / (norm_grad * norm_grad).mean().sqrt().item() * rho
                 # print(f"The index is {index} and the reward value is {norm}")
 
@@ -296,6 +313,8 @@ class DDIMSampler(object):
 
             if start > index >= end:
                 x_prev = x_prev - rho_scale * norm_grad.detach()
+                del norm_grad, norm, residual, D_x0_t
+                torch.cuda.empty_cache()
 
             x = beta_t.sqrt() * x_prev + (1 - beta_t).sqrt() * noise_like(x.shape, device, repeat_noise)
 

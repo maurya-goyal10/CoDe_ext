@@ -20,5 +20,6 @@ from .cd_grad import CoDeGradSD
 from .cd_grad_new import CoDeGradNewSD
 from .cd_grad_final import CoDeGradSDFinal
 from .cd_grad_final_general import CoDeGradSDFinalGeneral
+from .cd_grad_final_general_i2i import CoDeGradSDFinalI2IGeneral
 from .cd_grad_new_variant import CoDeGradNewSDVariant
 from .cd_grad_extend import CoDeGradSDExtension

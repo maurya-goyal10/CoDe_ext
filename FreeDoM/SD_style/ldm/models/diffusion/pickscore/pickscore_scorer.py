@@ -39,7 +39,7 @@ class PickScoreScorer(torch.nn.Module):
         if images.min() < 0: # normalize unnormalized images
             images = ((images / 2) + 0.5).clamp(0, 1)
 
-        inputs = torchvision.transforms.Resize((self.target_size,self.target_size))(images)
+        inputs = torchvision.transforms.Resize(self.target_size)(images)
         inputs = self.normalize(inputs).to(self.device,self.dtype)
         image_embeds = self.model.get_image_features(pixel_values=inputs)
         image_embeds = image_embeds / torch.norm(image_embeds, dim=-1, keepdim=True)

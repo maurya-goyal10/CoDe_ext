@@ -178,7 +178,11 @@ class CoDeSDPipeline(StableDiffusionPipeline):
         is_failed = True
         num_batch = num_images_per_prompt // self.genbatch
         
+        # prev_rewards = []
+        
+        
         for batch_iter in tqdm(range(num_batch), total=num_batch):
+            # batch_prev_reward = []
 
             if getattr(self, 'samples_schedule', None) is not None:
                 self.val_sample_size = len(timesteps)/len(self.samples_schedule)
@@ -204,8 +208,20 @@ class CoDeSDPipeline(StableDiffusionPipeline):
             
             for i, t in enumerate(timesteps):
                 
+                # if(i%50 == 0 and i!=0):
+                #     decoded_latents = self.decode_latents(curr_samples)
+                #     image_pils = self.numpy_to_pil(decoded_latents)
+                    
+                #     image_pils[rewards.argmax()].save(Path(self.path.joinpath(prompt)).joinpath(f"temp/{t}.png"))
+                    # print(f"{t} saved at {image_pils.shape}")
+                    
                 if getattr(self, 'samples_schedule', None) is not None:
+                    # print(f"At time {t} the shape of curr samples is {curr_samples.shape}")
                     if(i>=self.next_sample_size):
+                        # print(f"At {t} rewards are {rewards} {rewards.argmax()}")
+                        # batch_max_reward = torch.max(rewards)
+                        # print(f"At timestep {t} max rewards out of {rewards} is {batch_max_reward}")
+                        # batch_prev_reward.append(batch_max_reward)
                         self.sample_idx += 1
                         self.next_sample_size += self.val_sample_size
                         if n_samples != self.samples_schedule[self.sample_idx]:
