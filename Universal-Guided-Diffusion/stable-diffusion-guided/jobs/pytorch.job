@@ -5,8 +5,8 @@
 # -----------------------------------------------------------------------------
 
 #SBATCH --partition=insy,general
-#SBATCH --qos=medium
-#SBATCH --time=24:00:00
+#SBATCH --qos=short
+#SBATCH --time=04:00:00
 #SBATCH --output=slurm.out
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=4
@@ -27,7 +27,7 @@ module use /opt/insy/modulefiles
 module load cuda/11.3
 module load miniconda/3.9
 
-conda activate ldm
+conda activate mpgd
 
 export PYTHONDONTWRITEBYTECODE=abc
 export PYTHONUNBUFFERED=TRUE
@@ -44,7 +44,7 @@ date
 python -c "import torch; print(torch.cuda.device_count())"
 nvidia-smi
 
-cd ../../
+cd ../../../
 
 python commandline
 

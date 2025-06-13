@@ -16,7 +16,7 @@ from tqdm.auto import tqdm
 from diffusers import StableDiffusionPipeline
 from diffusers.pipelines.stable_diffusion import StableDiffusionPipelineOutput
 from typing import Union, Optional, List, Callable, Dict, Any
-from scorers import HPSScorer, AestheticScorer, FaceRecognitionScorer, ClipScorer
+from scorers import HPSScorer, AestheticScorer, FaceRecognitionScorer, ClipScorer, ImageRewardScorer, PickScoreScorer
 
 class CoDeSDPipelineI2I(StableDiffusionPipeline):
     @torch.no_grad()
@@ -235,7 +235,10 @@ class CoDeSDPipelineI2I(StableDiffusionPipeline):
 
                         pred_original_temp = self.scheduler.step(noise_pred, prev_timestep, curr_samples, **extra_step_kwargs).pred_original_sample
                         rewards = self.compute_scores(pred_original_temp, prompt)
+                        
                     else:
+                        if isinstance(self.scorer, PickScoreScorer):
+                            rewards_igram = self.compute_score_igram(curr_samples)
                         rewards = self.compute_scores(curr_samples, prompt)
                     
 
@@ -268,8 +271,26 @@ class CoDeSDPipelineI2I(StableDiffusionPipeline):
 
             with open(savepath, 'w') as fp:
                 json.dump(store_rewards, fp)
+                
+            if isinstance(self.scorer, PickScoreScorer):
+                store_igram_rewards = []
+                rewards_igram = torch.cat([x.unsqueeze(0) for x in rewards_igram.chunk(n_samples)], dim=0)
+                savepath_igram = Path(self.path.joinpath(prompt)).joinpath("rewards_igram.json")
+                if Path.exists(savepath_igram): # if exists append else create new
+                    with open(savepath_igram, 'r') as fp:
+                        store_igram_rewards = json.load(fp)
+                        
+                rewards_igram = rewards_igram.permute(1,0)
+                rewards_igram = torch.cat([x[select_ind[idx]].unsqueeze(0) for idx, x in enumerate(rewards_igram)], dim=0) # TODO: Make it efficient
+                store_igram_rewards.extend(rewards_igram.cpu().numpy().tolist())
+
+                with open(savepath_igram, 'w') as fp:
+                    json.dump(store_igram_rewards, fp)                
 
         return is_failed
+    
+    def set_clipscorer(self):
+        self.clipscorer = ClipScorer()
 
     def set_genbatch(self, genbatch: int = 5):
         self.genbatch = genbatch
@@ -290,7 +311,9 @@ class CoDeSDPipelineI2I(StableDiffusionPipeline):
         decoded_latents = torch.from_numpy(decoded_latents).permute(0,3,1,2)
 
         try:
-            if isinstance(self.scorer, HPSScorer):
+            if isinstance(self.scorer, HPSScorer) or\
+                isinstance(self.scorer, ImageRewardScorer) or\
+                isinstance(self.scorer, PickScoreScorer):
                 prompts = [prompt] * len(decoded_latents)
                 rewards = self.scorer.score(decoded_latents, prompts)
             elif isinstance(self.scorer, FaceRecognitionScorer)or\
@@ -317,6 +340,9 @@ class CoDeSDPipelineI2I(StableDiffusionPipeline):
         if isinstance(self.scorer, ClipScorer):
             target_img = torchvision.transforms.ToTensor()(target_img)
             self.target_img = self.scorer.encode(target_img.unsqueeze(0))
+        elif isinstance(self.scorer, PickScoreScorer):
+            target_img = torchvision.transforms.ToTensor()(target_img)
+            self.target_img = self.clipscorer.encode(target_img.unsqueeze(0))
         else:
             self.target_img = torchvision.transforms.ToTensor()(target_img)
         # print(self.target_img.shape)
@@ -326,7 +352,9 @@ class CoDeSDPipelineI2I(StableDiffusionPipeline):
         decoded_latents = self.decode_latents(latent)
         decoded_latents = torch.from_numpy(decoded_latents).permute(0,3,1,2)
 
-        if isinstance(self.scorer, HPSScorer):
+        if isinstance(self.scorer, HPSScorer) or\
+            isinstance(self.scorer, ImageRewardScorer) or\
+            isinstance(self.scorer, PickScoreScorer):
             
             prompts = [prompt] * len(decoded_latents)
             out = self.scorer.score(decoded_latents, prompts)
@@ -339,3 +367,10 @@ class CoDeSDPipelineI2I(StableDiffusionPipeline):
             out = self.scorer.score(decoded_latents)
 
         return out
+    
+    @torch.no_grad()
+    def compute_score_igram(self,latent):
+        decoded_latents = self.decode_latents(latent)
+        decoded_latents = torch.from_numpy(decoded_latents).permute(0,3,1,2)
+        
+        return self.clipscorer.score(decoded_latents, self.target_img)

@@ -19,7 +19,7 @@ from tqdm.auto import tqdm
 from diffusers import StableDiffusionPipeline
 from diffusers.pipelines.stable_diffusion import StableDiffusionPipelineOutput
 from typing import Union, Optional, List, Callable, Dict, Any
-from scorers import HPSScorer, AestheticScorer, FaceRecognitionScorer, ClipScorer
+from scorers import HPSScorer, AestheticScorer, FaceRecognitionScorer, ClipScorer, PickScoreScorer
 
 
 class SDPipelineI2I(StableDiffusionPipeline):
@@ -227,6 +227,22 @@ class SDPipelineI2I(StableDiffusionPipeline):
 
             with open(savepath, 'w') as fp:
                 json.dump(rewards, fp)
+                
+            rewards_igram = []
+            savepath_igram = Path(self.path.joinpath(prompt)).joinpath("rewards_igram.json")
+            if Path.exists(savepath_igram): # if exists append else create new
+                with open(savepath_igram, 'r') as fp:
+                    rewards_igram = json.load(fp)
+
+            try:
+                rewards_igram.extend(self.compute_score_igram(curr_samples).cpu().numpy().tolist())
+            except:
+                print("failed!")
+                is_failed = True
+                continue
+
+            with open(savepath_igram, 'w') as fp:
+                json.dump(rewards_igram, fp)
 
         return is_failed
     
@@ -249,7 +265,8 @@ class SDPipelineI2I(StableDiffusionPipeline):
         decoded_latents = torch.from_numpy(decoded_latents).permute(0,3,1,2)
 
         try:
-            if isinstance(self.scorer, HPSScorer):
+            if isinstance(self.scorer, HPSScorer) or\
+                isinstance(self.scorer, PickScoreScorer):
                 prompts = [prompt] * len(decoded_latents)
                 rewards = self.scorer.score(decoded_latents, prompts)
             elif isinstance(self.scorer, FaceRecognitionScorer)or\
@@ -276,6 +293,9 @@ class SDPipelineI2I(StableDiffusionPipeline):
         if isinstance(self.scorer, ClipScorer):
             target_img = torchvision.transforms.ToTensor()(target_img)
             self.target_img = self.scorer.encode(target_img.unsqueeze(0))
+        elif isinstance(self.scorer, PickScoreScorer):
+            target_img = torchvision.transforms.ToTensor()(target_img)
+            self.target_img = self.clipscorer.encode(target_img.unsqueeze(0))
         else:
             self.target_img = torchvision.transforms.ToTensor()(target_img)
         # print(self.target_img.shape)
@@ -285,7 +305,8 @@ class SDPipelineI2I(StableDiffusionPipeline):
         decoded_latents = self.decode_latents(latent)
         decoded_latents = torch.from_numpy(decoded_latents).permute(0,3,1,2)
 
-        if isinstance(self.scorer, HPSScorer):
+        if isinstance(self.scorer, HPSScorer) or\
+            isinstance(self.scorer, PickScoreScorer):
             
             prompts = [prompt] * len(decoded_latents)
             out = self.scorer.score(decoded_latents, prompts)
@@ -298,6 +319,16 @@ class SDPipelineI2I(StableDiffusionPipeline):
             out = self.scorer.score(decoded_latents)
 
         return out
+    
+    @torch.no_grad()
+    def compute_score_igram(self,latent):
+        decoded_latents = self.decode_latents(latent)
+        decoded_latents = torch.from_numpy(decoded_latents).permute(0,3,1,2)
+        
+        return self.clipscorer.score(decoded_latents, self.target_img)
+
+    def set_clipscorer(self):
+        self.clipscorer = ClipScorer()
     
     """modified from prepare_mask_and_masked_image https://github.com/huggingface/diffusers/blob/main/src/diffusers/pipelines/stable_diffusion/pipeline_stable_diffusion_inpaint.py"""
 def prepare_image(image):
@@ -350,3 +381,5 @@ def encode(im, vae):
     latent = vae.encode(im).latent_dist.sample()
     latent = vae.config.scaling_factor * latent
     return latent
+
+

@@ -206,13 +206,24 @@ class GradSDPipelineI2I(StableDiffusionPipeline):
                     noise_pred_uncond, noise_pred_text = noise_pred.chunk(2)
                     noise_pred = noise_pred_uncond + guidance_scale * (noise_pred_text - noise_pred_uncond)
 
-                # gradient guidance
-                sqrt_1minus_alpha_t = (1 - self.scheduler.alphas_cumprod[t] ) **0.5
-                grad = self.compute_gradient(curr_samples, prompt, noise_pred, t)
+                # # gradient guidance
+                # sqrt_1minus_alpha_t = (1 - self.scheduler.alphas_cumprod[t] ) **0.5
+                # grad = self.compute_gradient(curr_samples, prompt, noise_pred, t)
 
-                noise_pred -= sqrt_1minus_alpha_t * self.target_guidance * grad 
+                # noise_pred -= sqrt_1minus_alpha_t * self.target_guidance * grad 
+
+                # curr_samples = self.scheduler.step(noise_pred, t, curr_samples, **extra_step_kwargs).prev_sample
+
+                # prev_timestep = t - self.scheduler.config.num_train_timesteps // self.scheduler.num_inference_steps
+                
+                # gradient guidance - changing the DPS implementation
+                sqrt_1minus_alpha_t = (1 - self.scheduler.alphas_cumprod[t] ) **0.5
+                grad = self.target_guidance * self.compute_gradient(curr_samples, prompt, noise_pred, t)
+
+                # noise_pred -= sqrt_1minus_alpha_t * self.target_guidance * grad 
 
                 curr_samples = self.scheduler.step(noise_pred, t, curr_samples, **extra_step_kwargs).prev_sample
+                curr_samples = curr_samples + grad
 
                 prev_timestep = t - self.scheduler.config.num_train_timesteps // self.scheduler.num_inference_steps
 
@@ -359,6 +370,9 @@ class GradSDPipelineI2I(StableDiffusionPipeline):
             rewards = -1 * self.scorer.loss_fn(im_pix)
 
         grad = torch.autograd.grad(rewards.sum(), latent_in)[0]
+        grad_norm = torch.norm(grad, p=2, dim=(1, 2, 3), keepdim=True) + 1e-8  # Add small value to avoid division by zero
+        normalized_grad = grad / grad_norm
+        return normalized_grad.clone().cuda()
 
         return grad.clone().cuda()
 
@@ -393,7 +407,7 @@ def predict_x0_from_xt(
     # 2. compute predicted original sample from predicted noise also called
     # "predicted x_0" of formula (15) from https://arxiv.org/pdf/2006.11239.pdf
     if self.config.prediction_type == "epsilon":
-        pred_original_sample = (sample - beta_prod_t ** (0.5) * model_output) / alpha_prod_t ** (0.5)
+        pred_original_sample = (sample - (beta_prod_t ** (0.5)) * model_output) / (alpha_prod_t ** (0.5))
     elif self.config.prediction_type == "sample":
         pred_original_sample = model_output
     elif self.config.prediction_type == "v_prediction":

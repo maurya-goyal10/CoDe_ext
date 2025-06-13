@@ -1,6 +1,7 @@
 import argparse, os, sys, glob
 import cv2
 import torch
+import json
 import numpy as np
 from omegaconf import OmegaConf
 from PIL import Image
@@ -22,14 +23,13 @@ from ldm.models.diffusion.dpm_solver import DPMSolverSampler
 from diffusers.pipelines.stable_diffusion.safety_checker import StableDiffusionSafetyChecker
 from transformers import AutoFeatureExtractor
 from ldm.models.diffusion.clip.base_clip import CLIPEncoder
+from ldm.models.diffusion.aesthetic.aesthetic_scorer import AestheticScorer
+from ldm.models.diffusion.pickscore.pickscore_scorer import PickScoreScorer
 from tqdm import tqdm
 
 from transformers import logging
 logging.set_verbosity_error()
 
-from pathlib import Path
-
-ASSETS_PATH = Path("/home/sayak/Projects/PhD_GuidedDiff/BoN/assets")
 
 # load safety model
 safety_model_id = "CompVis/stable-diffusion-safety-checker"
@@ -102,6 +102,31 @@ def check_safety(x_image):
             x_checked_image[i] = load_replacement(x_checked_image[i])
     return x_checked_image, has_nsfw_concept
 
+def load_score(file_path):
+    if os.path.exists(file_path):
+        with open(file_path, "r") as f:
+            return json.load(f)
+    return {}
+
+def save_score(file_path, score):
+    with open(file_path, "w") as f:
+        json.dump(score, f)
+
+# def update_score(file_path, prompt, new_score):
+#     results = load_score(file_path)
+#     if prompt not in results:
+#         results[prompt] = []
+#     elif not isinstance(results[prompt], list):
+#         results[prompt] = [results[prompt]] 
+#     results[prompt].append(new_score)
+#     save_score(file_path, results)
+    
+def update_score(file_path, new_score):
+    results = load_score(file_path)
+    if not isinstance(results, list):
+        results = []
+    results.append(new_score)
+    save_score(file_path, results)
 
 def main():
     parser = argparse.ArgumentParser()
@@ -110,7 +135,7 @@ def main():
     parser.add_argument(
         "--prompt",
         type=str,
-        nargs="?",
+        nargs="+",
         default="a cat wearing glasses",
         help="the prompt to render"
     )
@@ -189,12 +214,12 @@ def main():
         default=8,
         help="downsampling factor",
     )
-    # parser.add_argument(
-    #     "--n_samples",
-    #     type=int,
-    #     default=1,
-    #     help="how many samples to produce for each given prompt. A.k.a. batch size",
-    # )
+    parser.add_argument(
+        "--n_samples",
+        type=int,
+        default=1,
+        help="how many samples to produce for each given prompt. A.k.a. batch size",
+    )
     parser.add_argument(
         "--n_rows",
         type=int,
@@ -249,6 +274,24 @@ def main():
         default=1,
         help="time travel cycle number",
     )
+    parser.add_argument(
+        "--reward_model",
+        type=str,
+        default="CLIP",
+        help="reward model",
+    )
+    parser.add_argument(
+        "--start_ratio",
+        type=float,
+        default=0.7,
+        help="start_ratio",
+    )
+    parser.add_argument(
+        "--end_ratio",
+        type=float,
+        default=0.3,
+        help="end_ratio",
+    )
     
     opt = parser.parse_args()
 
@@ -277,13 +320,14 @@ def main():
     outpath = opt.outdir
 
     print("Creating invisible watermark encoder (see https://github.com/ShieldMnt/invisible-watermark)...")
-    # wm = "StableDiffusionV1"
-    # wm_encoder = WatermarkEncoder()
-    # wm_encoder.set_watermark('bytes', wm.encode('utf-8'))
+    wm = "StableDiffusionV1"
+    wm_encoder = WatermarkEncoder()
+    wm_encoder.set_watermark('bytes', wm.encode('utf-8'))
 
-    opt.n_samples = 1 # current version only supprt batchsize 1
+    # opt.n_samples = 1 # current version only supprt batchsize 1
     batch_size = opt.n_samples
-    sample_path = os.path.join(outpath, f"ddim{opt.ddim_steps}_tt{opt.tt}_rho{opt.rho}")
+    sample_path = os.path.join(outpath, f"mpgd_ddim{opt.ddim_steps}_tt{opt.tt}_rho{opt.rho}_reward{opt.reward_model}")
+    sample_path = os.path.join(sample_path,"images")
     os.makedirs(sample_path, exist_ok=True)
     base_count = len(os.listdir(sample_path))
     grid_count = len(os.listdir(outpath)) - 1
@@ -292,51 +336,36 @@ def main():
     if opt.fixed_code:
         start_code = torch.randn([opt.n_samples, opt.C, opt.H // opt.f, opt.W // opt.f], device=device)
         
-    image_encoder = CLIPEncoder(alt_score=True).cuda()
+    if opt.reward_model == "CLIP":
+        image_encoder = CLIPEncoder().cuda()
+    elif opt.reward_model == "Aesthetic":
+        image_encoder = AestheticScorer().cuda()
+    elif opt.reward_model == "PickScore":
+        image_encoder = PickScoreScorer().cuda()
 
-    with open(ASSETS_PATH.joinpath('style.txt'), 'r') as fp:
-        prompts = [line.strip() for line in fp.readlines()]
-
+    dict_results = dict()
     precision_scope = autocast if opt.precision=="autocast" else nullcontext
     with precision_scope("cuda") and model.ema_scope():
-
-        for idx, prompt in enumerate(prompts):
-
-            n = -1
-            for filename in tqdm(sorted(os.listdir(opt.style_ref_path))):
-                if filename.lower().endswith(('.png', '.jpg', '.jpeg', '.tiff', '.bmp', '.gif')):
-                    
-                    n += 1
-                    num_images_per_prompt = opt.n_iter
-
-                    offset = 0
-                    savepath = Path(sample_path).joinpath(f'og_img_{n}').joinpath("images").joinpath(prompt)
-                    if Path.exists(savepath):
-
-                        images = [x for x in savepath.iterdir() if x.suffix == '.png']
-                        num_gen_images = len(images)
-                        if num_gen_images >= num_images_per_prompt:
-                            print(f'Images found. Skipping prompt.')
-                            continue
-
-                        elif num_gen_images < num_images_per_prompt:
-                            offset = num_gen_images
-                            num_images_per_prompt -= num_gen_images
-                            print(f'Found {num_gen_images} images. Generating {num_images_per_prompt} more.')
-
-                    if not Path.exists(savepath):
-                        Path.mkdir(savepath, exist_ok=True, parents=True)
-
-                    for j in range(num_images_per_prompt):
-
+        for j in range(opt.n_iter):
+            tic = time.time()
+            if opt.reward_model == "CLIP":
+                print("CLIP model")
+                for filename in tqdm(sorted(os.listdir(opt.style_ref_path))):
+                    if filename.lower().endswith(('.png', '.jpg', '.jpeg', '.tiff', '.bmp', '.gif')):
                         style_ref_img_path = os.path.join(opt.style_ref_path, filename)
                         image_encoder.calc_ref_feat(style_ref_img_path)
-                        prompts = batch_size * [prompt]
+                        if isinstance(opt.prompt, list):
+                            prompts = batch_size * opt.prompt
+                        else:
+                            prompts = batch_size * [opt.prompt]
+                        # prompts = batch_size * opt.prompt
                         uc = None
                         if opt.scale != 1.0:
                             uc = model.get_learned_conditioning(batch_size * [""])
+                        
                         if isinstance(prompts, tuple):
                             prompts = list(prompts)
+                        print(prompts)
                         c = model.get_learned_conditioning(prompts)
                         shape = [opt.C, opt.H // opt.f, opt.W // opt.f]
                         samples_ddim, intermediates = sampler.sample(S=opt.ddim_steps,
@@ -359,60 +388,82 @@ def main():
                         x_checked_image, has_nsfw_concept = check_safety(x_samples_ddim)
 
                         x_checked_image_torch = torch.from_numpy(x_checked_image).permute(0, 3, 1, 2)
-
+                        
                         for i, x_sample in enumerate(x_checked_image_torch):
                             x_sample = 255. * rearrange(x_sample.cpu().numpy(), 'c h w -> h w c')
                             img = Image.fromarray(x_sample.astype(np.uint8))
-                            # img = put_watermark(img, wm_encoder)
-                            # img.save(os.path.join(sample_path, f"{'.'.join(filename.split('.')[:-1])}_{j}_{i}.png"))
-                            img.save(os.path.join(savepath, f'{j + offset}.png'))
+                            img = put_watermark(img, wm_encoder)
+                            img.save(os.path.join(sample_path, f"{'.'.join(filename.split('.')[:-1])}_{j}_{i}.png"))
+                            base_count += 1
+                            
+            elif opt.reward_model == "Aesthetic" or opt.reward_model== "PickScore":
+                print(opt.prompt)
+                if isinstance(opt.prompt, list):
+                    prompts = batch_size * opt.prompt
+                else:
+                    prompts = batch_size * [opt.prompt]
+                print(f"batch_size is {batch_size}")
+                for prompt in prompts:
+                    prompt_path = os.path.join(sample_path,prompt)
+                    os.makedirs(prompt_path, exist_ok=True)
+                    uc = None
+                    if opt.scale != 1.0:
+                        uc = model.get_learned_conditioning(1 * [""])
+                    # if isinstance(prompt, tuple):
+                    #     prompts = list(prompts)
+                    c = model.get_learned_conditioning(prompt)
+                    shape = [opt.C, opt.H // opt.f, opt.W // opt.f]
+                    
+                    samples_ddim, intermediates = sampler.sample(S=opt.ddim_steps,
+                                                        conditioning=c,
+                                                        batch_size=1,
+                                                        shape=shape,
+                                                        verbose=False,
+                                                        unconditional_guidance_scale=opt.scale,
+                                                        unconditional_conditioning=uc,
+                                                        eta=opt.ddim_eta,
+                                                        x_T=start_code,
+                                                        image_encoder=image_encoder,
+                                                        tt = opt.tt,
+                                                        rho = opt.rho,
+                                                        start_ratio = opt.start_ratio,
+                                                        end_ratio = opt.end_ratio,
+                                                        prompt = prompt)
 
+                    x_samples_ddim = model.decode_first_stage(samples_ddim)
+                    if opt.reward_model == "Aesthetic":
+                        aesthetic_score = image_encoder.score(x_samples_ddim).item()
+                    else:
+                        aesthetic_score = image_encoder.score(x_samples_ddim,prompt).item()
+                    x_samples_ddim = torch.clamp((x_samples_ddim + 1.0) / 2.0, min=0.0, max=1.0)
+                    x_samples_ddim = x_samples_ddim.cpu().permute(0, 2, 3, 1).detach().numpy()
 
-        # for j in range(opt.n_iter):
-        #     tic = time.time()
-        #     for filename in tqdm(sorted(os.listdir(opt.style_ref_path))):
-        #         if filename.lower().endswith(('.png', '.jpg', '.jpeg', '.tiff', '.bmp', '.gif')):
-        #             style_ref_img_path = os.path.join(opt.style_ref_path, filename)
-        #             image_encoder.calc_ref_feat(style_ref_img_path)
-        #             prompts = batch_size * [opt.prompt]
-        #             uc = None
-        #             if opt.scale != 1.0:
-        #                 uc = model.get_learned_conditioning(batch_size * [""])
-        #             if isinstance(prompts, tuple):
-        #                 prompts = list(prompts)
-        #             c = model.get_learned_conditioning(prompts)
-        #             shape = [opt.C, opt.H // opt.f, opt.W // opt.f]
-        #             samples_ddim, intermediates = sampler.sample(S=opt.ddim_steps,
-        #                                                 conditioning=c,
-        #                                                 batch_size=opt.n_samples,
-        #                                                 shape=shape,
-        #                                                 verbose=False,
-        #                                                 unconditional_guidance_scale=opt.scale,
-        #                                                 unconditional_conditioning=uc,
-        #                                                 eta=opt.ddim_eta,
-        #                                                 x_T=start_code,
-        #                                                 image_encoder=image_encoder,
-        #                                                 tt = opt.tt,
-        #                                                 rho = opt.rho)
+                    x_checked_image, has_nsfw_concept = check_safety(x_samples_ddim)
+                    # x_checked_image = x_samples_ddim
+                    
+                    x_checked_image_torch = torch.from_numpy(x_checked_image).permute(0, 3, 1, 2)
+                    # print(prompt)
+                    score_dir = os.path.join(prompt_path, f"rewards.json")
+                    
+                    z = 0
+                    data = {}
+                    if os.path.exists(score_dir):
+                        with open(score_dir,"r") as f:
+                            data = json.load(f)
+                            z = len(data)
+                    
+                    for i, x_sample in enumerate(x_checked_image_torch):
+                        x_sample = 255. * rearrange(x_sample.cpu().numpy(), 'c h w -> h w c')
+                        img = Image.fromarray(x_sample.astype(np.uint8))
+                        # img = put_watermark(img, wm_encoder)
+                        img.save(os.path.join(prompt_path, f"{z}.png"))
+                        # update_score(score_dir,prompt,aesthetic_score)         
+                        update_score(score_dir,aesthetic_score)         
 
-        #             x_samples_ddim = model.decode_first_stage(samples_ddim)
-        #             x_samples_ddim = torch.clamp((x_samples_ddim + 1.0) / 2.0, min=0.0, max=1.0)
-        #             x_samples_ddim = x_samples_ddim.cpu().permute(0, 2, 3, 1).detach().numpy()
-
-        #             x_checked_image, has_nsfw_concept = check_safety(x_samples_ddim)
-
-        #             x_checked_image_torch = torch.from_numpy(x_checked_image).permute(0, 3, 1, 2)
-
-        #             for i, x_sample in enumerate(x_checked_image_torch):
-        #                 x_sample = 255. * rearrange(x_sample.cpu().numpy(), 'c h w -> h w c')
-        #                 img = Image.fromarray(x_sample.astype(np.uint8))
-        #                 # img = put_watermark(img, wm_encoder)
-        #                 img.save(os.path.join(sample_path, f"{'.'.join(filename.split('.')[:-1])}_{j}_{i}.png"))
-        #                 base_count += 1
-
-        #     toc = time.time()
-
-
+            toc = time.time()
+    
+    # with open(os.path.join(sample_path, f"scores.json"),"w") as f:
+    #     json.dump(dict_results,f,indent=4)
 
 if __name__ == "__main__":
     main()

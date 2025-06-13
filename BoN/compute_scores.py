@@ -6,7 +6,9 @@ from PIL import Image
 from tqdm.auto import tqdm
 from pathlib import Path
 
-_SCORERS = ['strokegen', 'facedetector'] # ['strokegen', 'facedetector', 'styletransfer']
+import uuid
+
+_SCORERS = ['aesthetic'] # ['strokegen', 'facedetector', 'styletransfer'] 'strokegen', 'facedetector'
 
 _MAP_UG = {
     'styletransfer': {
@@ -25,20 +27,20 @@ def main():
 
     currhost = os.uname()[1]
     root_path = Path('/glb/data/ptxd_dash/nlasqh/PhD_GuidedDiff') if "housky" in currhost\
-                    # else Path('/home/sayak/Projects/PhD_GuidedDiff')
                     else Path('/tudelft.net/staff-umbrella/StudentsCVlab/mgoyal/CoDe_ext')
+                    # else Path('/home/sayak/Projects/PhD_GuidedDiff')
     outputs_path = Path('/glb/data/ptxd_dash/nlasqh/PhD_GuidedDiff/BoN/outputs') if "housky" in currhost\
+                    else Path('/tudelft.net/staff-umbrella/StudentsCVlab/mgoyal/CoDe_ext/BoN/outputs')
                     # else Path('/home/sayak/Projects/PhD_GuidedDiff/BoN/outputs_img_abla')
-                    else Path('/tudelft.net/staff-umbrella/StudentsCVlab/mgoyal/CoDe_ext/BoN/outputs_img_abla')
 
     
     # Load unconditional rewards
     # breakpoint()
     uncond_rewards = dict()
-    _SCORERS = ['strokegen', 'facedetector'] # ['strokegen', 'facedetector', 'styletransfer']
+    # _SCORERS = ['pickscore'] # ['strokegen', 'facedetector', 'styletransfer'] 'strokegen', 'facedetector'
     for scorer in _SCORERS:
 
-        scorer_path = outputs_path.joinpath(f'uncond_{scorer}')
+        scorer_path = outputs_path.joinpath(f'uncond2_{scorer}')
 
         uncond_rewards[scorer] = dict()
 
@@ -46,7 +48,8 @@ def main():
         for target_dir in target_dirs:
             uncond_rewards[scorer][target_dir.stem] = dict()
 
-            prompt_dirs = [x for x in target_dir.joinpath('images').iterdir() if Path.is_dir(x)]
+            # prompt_dirs = [x for x in target_dir.joinpath('images').iterdir() if Path.is_dir(x)]
+            prompt_dirs = [x for x in target_dir.iterdir() if Path.is_dir(x)]
 
             for prompt_dir in prompt_dirs:
 
@@ -54,21 +57,240 @@ def main():
                     prompt_reward = json.load(fp)
 
                 uncond_rewards[scorer][target_dir.stem][prompt_dir.stem] = np.array(prompt_reward)
+                print(f"{prompt_dir.stem} the rewards are {prompt_reward}")
 
     # Compute scores
     perf = dict()
 
-    if Path.exists(Path('perf_ccode_b1.json')):
-        with open('perf_ccode_b1.json', 'r') as fp:
+    # name_file = 'perf_ccode_b1'
+    name_file = 'ablations/blockwise_grad'
+    if Path.exists(Path(f'{name_file}.json')):
+        with open(f'{name_file}.json', 'r') as fp:
             perf = json.load(fp)
-
-    d = ['c_code_10_b1_r6_styletransfer',
-        'c_code_10_b1_r7_facedetector',
-        'c_code_20_b1_r6_styletransfer',
-        'c_code_20_b1_r7_facedetector',
-        'c_code_30_b1_r6_styletransfer',
-        'c_code_30_b1_r7_facedetector']
+          
+    # d = [
+    #     'code_grad_final_generalvar4reviiiiiii_multinomial_b5_gb5_temp500_st7_et0_FreeDoM_pickscore_gs2',
+    #     'code_grad_final_generalvar4reviiiiiii_multinomial_b5_gb5_temp1000_st7_et0_FreeDoM_pickscore_gs2',
+    #     'code_grad_final_generalvar4reviiiiiii_multinomial_b5_gb5_temp2000_st7_et0_FreeDoM_pickscore_gs2',
+    #     'code_grad_final_generalvar4reviiiiiii_multinomial_b5_gb5_temp4000_st7_et0_FreeDoM_pickscore_gs2',
+    #     'code_grad_final_generalvar4reviiiiiii_multinomial_b5_gb5_temp5000_st7_et0_FreeDoM_pickscore_gs2',
+    #     'code_grad_final_generalvar4reviiiiiii_multinomial_b5_gb5_temp7000_st7_et0_FreeDoM_pickscore_gs2',
+    #     'code_grad_final_generalvar4reviiiiiii_multinomial_b5_gb5_temp10000_st7_et0_FreeDoM_pickscore_gs2',
+    # ]  
+    # d = [
+    #     'mpgd_ddim100_tt1_rho75_reward_aesthetic',
+    #     'FreeDoM_aesthetic_rho2_aesthetic',
+    #     'code_grad_final_generalvar4reviiiiii_multinomial_b5_gb5_temp1000_st6_et0_FreeDoM_aesthetic_gs2',
+    # ]
+    # d = [
+    #     'uncond2_pickscore',
+    #     'code4_greedy_b5_pickscore',
+    #     'code40_greedy_b5_pickscore',
+    #     'code_grad_final_general4_greedy_b5_gb5_st7_et0_FreeDoM_pickscore_gs2',
+    # ]
     
+    # table_1_aesthetic
+    # d = [
+    #     'uncond_aesthetic',
+    #     'code4_greedy_b5_aesthetic',
+    #     'code40_greedy_b5_aesthetic',
+    #     'code_grad_final_general4_greedy_b5_gb5_st6_et0_FreeDoM_aesthetic_gs2',
+    #     'code_grad_final_general4_multinomial_b5_gb5_temp1000_st6_et0_FreeDoM_aesthetic_gs2',
+    #     'code_grad_final_generalvar4reviiiiii_greedy_b5_gb5_st6_et0_FreeDoM_aesthetic_gs2',
+    #     'code_grad_final_generalvar4reviiiiii_multinomial_b5_gb5_temp1000_st6_et0_FreeDoM_aesthetic_gs2',
+    #     'code_grad_final_generalvar4reviiiiii_multinomial_b5_gb5_temp1000_st6_et0_KMeans_FreeDoM_aesthetic_gs20'
+    #     ]
+    # d = ['code_grad_final_general4_greedy_b5_gb5_st6_et0_FreeDoM_aesthetic_gs2',
+    #      'code_grad_final_general4_multinomial_b5_gb5_temp1000_st6_et0_FreeDoM_aesthetic_gs2',
+    #      'code_grad_final_generalvar4reviiiiii_multinomial_b5_gb5_temp1000_st6_et0_FreeDoM_aesthetic_gs2']
+    # d = ['code4_b5_aesthetic',
+    #      'code4_multinomial_temp200_b5_aesthetic',
+    #      'code4_multinomial_temp500_b5_aesthetic',
+    #      'code4_multinomial_temp750_b5_aesthetic',
+    #      'code4_multinomial_temp1000_b5_aesthetic',
+    #      'code4_multinomial_temp2000_b5_aesthetic',
+    #      'code4_multinomial_temp3000_b5_aesthetic',
+    #      'code4_multinomial_temp4000_b5_aesthetic',
+    #      'code4_multinomial_temp5000_b5_aesthetic',
+    #      'code4_multinomial_temp6000_b5_aesthetic',
+    #      'code4_multinomial_temp7000_b5_aesthetic',
+    #      'code4_multinomial_temp8000_b5_aesthetic',
+    #      'code4_multinomial_temp9000_b5_aesthetic',
+    #      'code4_multinomial_temp10000_b5_aesthetic',
+    #      'code4_multinomial_temp15000_b5_aesthetic',]
+    
+    # d = ['code40_b5_aesthetic',
+    #      'code_grad_final_general4_greedy_b5_gb5_st6_et0_FreeDoM_aesthetic_gs2',
+    #      'code_grad_final_generalvar4_greedy_b5_gb5_st6_et0_FreeDoM_aesthetic_gs2',
+    #      'code_grad_final_generalvar4i_greedy_b5_gb5_st6_et0_FreeDoM_aesthetic_gs2',
+    #      'code_grad_final_generalvar4ii_greedy_b5_gb5_st6_et0_FreeDoM_aesthetic_gs2',
+    #      'code_grad_final_generalvar4iii_greedy_b5_gb5_st6_et0_FreeDoM_aesthetic_gs2',
+    #      'code_grad_final_generalvar4iiii_greedy_b5_gb5_st6_et0_FreeDoM_aesthetic_gs2',
+    #      'code_grad_final_generalvar4iiiii_greedy_b5_gb5_st6_et0_FreeDoM_aesthetic_gs2',
+    #      'code_grad_final_generalvar4rev_greedy_b5_gb5_st6_et0_FreeDoM_aesthetic_gs2',
+    #      'code_grad_final_generalvar4revi_greedy_b5_gb5_st6_et0_FreeDoM_aesthetic_gs2',
+    #      'code_grad_final_generalvar4revii_greedy_b5_gb5_st6_et0_FreeDoM_aesthetic_gs2',
+    #      'code_grad_final_generalvar4reviii_greedy_b5_gb5_st6_et0_FreeDoM_aesthetic_gs2',
+    #      'code_grad_final_generalvar4reviiii_greedy_b5_gb5_st6_et0_FreeDoM_aesthetic_gs2',
+    #      'code_grad_final_generalvar4reviiiii_greedy_b5_gb5_st6_et0_FreeDoM_aesthetic_gs2',
+    #      'code_grad_final_generalvar4reviiiiii_greedy_b5_gb5_st6_et0_FreeDoM_aesthetic_gs2',
+    #      'code_grad_final_generalvar4reviiiiiii_greedy_b5_gb5_st6_et0_FreeDoM_aesthetic_gs2',
+    #      ]
+    
+    # d = ['code40_b5_pickscore',
+    #      'code_grad_final_general4_greedy_b5_gb5_st10_et0_FreeDoM_pickscore_gs2',
+    #      'code_grad_final_generalvar4_greedy_b5_gb5_st10_et0_FreeDoM_pickscore_gs2',
+    #      'code_grad_final_generalvar4i_greedy_b5_gb5_st10_et0_FreeDoM_pickscore_gs2',
+    #      'code_grad_final_generalvar4ii_greedy_b5_gb5_st10_et0_FreeDoM_pickscore_gs2',
+    #      'code_grad_final_generalvar4iii_greedy_b5_gb5_st10_et0_FreeDoM_pickscore_gs2',
+    #      'code_grad_final_generalvar4iiii_greedy_b5_gb5_st10_et0_FreeDoM_pickscore_gs2',
+    #      'code_grad_final_generalvar4iiiii_greedy_b5_gb5_st10_et0_FreeDoM_pickscore_gs2',
+    #      'code_grad_final_generalvar4rev_greedy_b5_gb5_st10_et0_FreeDoM_pickscore_gs2',
+    #      'code_grad_final_generalvar4revi_greedy_b5_gb5_st10_et0_FreeDoM_pickscore_gs2',
+    #      'code_grad_final_generalvar4revii_greedy_b5_gb5_st10_et0_FreeDoM_pickscore_gs2',
+    #      'code_grad_final_generalvar4reviii_greedy_b5_gb5_st10_et0_FreeDoM_pickscore_gs2',
+    #      'code_grad_final_generalvar4reviiii_greedy_b5_gb5_st10_et0_FreeDoM_pickscore_gs2',
+    #      'code_grad_final_generalvar4reviiiii_greedy_b5_gb5_st10_et0_FreeDoM_pickscore_gs2',
+    #      'code_grad_final_generalvar4reviiiiii_greedy_b5_gb5_st10_et0_FreeDoM_pickscore_gs2',
+    #      'code_grad_final_generalvar4reviiiiiii_greedy_b5_gb5_st10_et0_FreeDoM_pickscore_gs2',
+    #      'code_grad_final_generalvar4new_greedy_b5_gb5_st10_et0_FreeDoM_pickscore_gs2',
+    #      'code_grad_final_generalvar4newi_greedy_b5_gb5_st10_et0_FreeDoM_pickscore_gs2',
+    #      'code_grad_final_generalvar4newii_greedy_b5_gb5_st10_et0_FreeDoM_pickscore_gs2',
+    #      'code_grad_final_generalvar4newii_greedy_b5_gb5_st10_et0_FreeDoM_pickscore_gs2',
+    #      'code_grad_final_generalvar4newiii_greedy_b5_gb5_st10_et0_FreeDoM_pickscore_gs2',
+    #      ]
+            
+    # d = [
+    #     'code40_greedy_b5_pickscore',
+    #     'code4_greedy_b5_pickscore',
+    #     'uncond_pickscore',
+    #     'code_grad_final_general4_greedy_b5_gb2_st10_et0_FreeDoM_pickscore_gs2',
+    #     'code_grad_final_general4_greedy_b5_gb3_st10_et0_FreeDoM_pickscore_gs2',
+    #     'code_grad_final_general4_greedy_b5_gb4_st10_et0_FreeDoM_pickscore_gs2',
+    #     'code_grad_final_general4_greedy_b5_gb5_st10_et0_FreeDoM_pickscore_gs2',
+    #     # 'code_grad_final_general4_greedy_b5_gb5_st10_et0_FreeDoM_pickscore_gs2',
+    #     # 'code_grad_final_general4_greedy_b5_gb5_st9_et0_FreeDoM_pickscore_gs2',
+    #     # 'code_grad_final_general4_greedy_b5_gb5_st8_et0_FreeDoM_pickscore_gs2',
+    #     # 'code_grad_final_general4_greedy_b5_gb5_st95_et0_FreeDoM_pickscore_gs2',
+    #     ]
+
+    # d = ['code_grad4_b5_st7_et3_aesthetic_gs0',
+    #      'code_grad4_b5_st7_et3_aesthetic_gs3',
+    #      'code_grad4_b5_st7_et3_aesthetic_gs5',
+    #      'code_grad_new4_b5_st7_et3_aesthetic_gs3',
+    #      'code_grad_new4_b5_st7_et3_aesthetic_gs5',
+    #      'code_grad_new_variant4_b5_st7_et3_aesthetic_gs3',
+    #      'code_grad_new_variant4_b5_st7_et3_aesthetic_gs5',
+    #      'code40_b5_aesthetic']
+    # d = ['code_grad4_b5_st6_et2_aesthetic_gs5',
+    #      'code_grad1_b5_st6_et2_aesthetic_gs3',
+    #      'code_grad4_b5_st6_et2_aesthetic_gs3',
+    #      'code_grad4_b5_st7_et3_aesthetic_gs0',
+    #      'code40_b5_aesthetic',
+    #      'uncond2_aesthetic',
+    #      'DAS_alpha500_aesthetic',
+    #      'DAS_alpha1000_aesthetic']
+    # d = ['code40_greedy_b5_aesthetic',
+    #      'uncond2_aesthetic',
+    #      'code4_greedy_b5_aesthetic',
+    #      'code_grad_final_general4_greedy_b5_gb5_st6_et2_FreeDoM_aesthetic_gs3',
+    #      'code_grad_final_general4_greedy_b5_gb5_st6_et1_FreeDoM_aesthetic_gs2',
+    #      'code_grad_final_general4_greedy_b5_gb5_st6_et1_FreeDoM_aesthetic_gs3',
+    #      'code_grad_final_general4_greedy_b5_gb5_st7_et1_FreeDoM_aesthetic_gs2',
+    #      'code_grad_final_general4_greedy_b5_gb5_st7_et1_FreeDoM_aesthetic_gs3',
+    #      'code_grad_final_general4_greedy_b5_gb5_st7_et3_FreeDoM_aesthetic_gs3',
+    #      'code_grad_final_general4_greedy_b5_gb5_st6_et3_FreeDoM_aesthetic_gs3',
+    #      'code_grad_final_general4_greedy_b5_gb5_st7_et2_FreeDoM_aesthetic_gs2',
+    #      'code_grad_final_general4_greedy_b5_gb5_st8_et3_FreeDoM_aesthetic_gs3',
+    #      'code_grad_final_general4_greedy_b5_gb5_st8_et2_FreeDoM_aesthetic_gs2',
+    #      'code_grad_final_general4_greedy_b5_gb5_st8_et3_FreeDoM_aesthetic_gs2',
+    #      'code_grad_final_general4_greedy_b5_gb5_st8_et2_FreeDoM_aesthetic_gs3',
+    #      'code_grad_final_general4_greedy_b5_gb5_st7_et2_FreeDoM_aesthetic_gs3',
+    #      'code_grad_final_general4_greedy_b5_gb5_st6_et0_FreeDoM_aesthetic_gs2',
+    #      'code_grad_final_general4_greedy_b5_gb5_st7_et0_FreeDoM_aesthetic_gs2',
+    #      'code_grad_final_general4_greedy_b5_gb5_st8_et0_FreeDoM_aesthetic_gs2',
+    #      'code_grad_final_general4_greedy_b5_gb5_st8_et1_FreeDoM_aesthetic_gs2',
+    #      'code_grad_final_general4_greedy_b5_gb5_st9_et0_FreeDoM_aesthetic_gs15',
+    #      'code4_multinomial_temp1000_b5_aesthetic',
+    #     ]
+    
+    # d = ['code4_greedy_b5_aesthetic', 
+    #      'codevar4_greedy_b5_aesthetic',
+    #      'codevar4i_greedy_b5_aesthetic',
+    #      'codevar4ii_greedy_b5_aesthetic',
+    #      'codevar4iii_greedy_b5_aesthetic',
+    #      'codevar4iiii_greedy_b5_aesthetic',
+    #      'codevar4iiiii_greedy_b5_aesthetic',
+    #      'codevar4rev_greedy_b5_aesthetic',
+    #      'codevar4revi_greedy_b5_aesthetic',
+    #      'codevar4revii_greedy_b5_aesthetic',
+    #      'codevar4reviii_greedy_b5_aesthetic',
+    #      'codevar4reviiii_greedy_b5_aesthetic',
+    #      'codevar4reviiiii_greedy_b5_aesthetic',
+    #      'codevar4reviiiiii_greedy_b5_aesthetic',
+    #      'codevar4reviiiiiii_greedy_b5_aesthetic',
+    #     ]
+    
+    #ablations_compress_testing_
+    # d = [
+    #     # 'uncond_compress'
+    #     'code4_greedy_b5_compress',
+    #     # 'code40_greedy_b5_compress',
+    #     # 'code_grad_final_general4_greedy_b5_gb5_st10_et0_antithetic_1_FreeDoM_compress_gs2',
+    #     # 'code_grad_final_general4_greedy_b5_gb5_st10_et0_antithetic_5_FreeDoM_compress_gs2',
+    #     # 'code_grad_final_general4_greedy_b5_gb5_st10_et0_antithetic_10_FreeDoM_compress_gs2',
+    #     # 'code_grad_final_general4_greedy_b5_gb5_st10_et0_antithetic_50_FreeDoM_compress_gs2',
+    # ]
+    
+    # ablation_pickscore_temp_newi_
+    # d = [
+    #     'code_grad_final_generalvar4newi_greedy_b5_gb5_st10_et0_FreeDoM_pickscore_gs2',
+    #     # 'code_grad_final_generalvar4newi_multinomial_b5_gb5_temp500_st10_et0_FreeDoM_pickscore_gs2',
+    #     # 'code_grad_final_generalvar4newi_multinomial_b5_gb5_temp1000_st10_et0_FreeDoM_pickscore_gs2',
+    #     # 'code_grad_final_generalvar4newi_multinomial_b5_gb5_temp2000_st10_et0_FreeDoM_pickscore_gs2',
+    #     'code_grad_final_generalvar4newi_multinomial_b5_gb5_temp3000_st10_et0_FreeDoM_pickscore_gs2',
+    #     # 'code_grad_final_generalvar4newi_multinomial_b5_gb5_temp4000_st10_et0_FreeDoM_pickscore_gs2',
+    #     # 'code_grad_final_generalvar4newi_multinomial_b5_gb5_temp5000_st10_et0_FreeDoM_pickscore_gs2',
+    #     # 'code_grad_final_generalvar4newi_multinomial_b5_gb5_temp7000_st10_et0_FreeDoM_pickscore_gs2',
+    #     # 'code_grad_final_generalvar4newi_multinomial_b5_gb5_temp10000_st10_et0_FreeDoM_pickscore_gs2',
+    #     # 'code_grad_final_generalvar4newi_multinomial_b5_gb5_temp12000_st10_et0_FreeDoM_pickscore_gs2',
+    #     # 'code_grad_final_generalvar4newi_multinomial_b5_gb5_temp15000_st10_et0_FreeDoM_pickscore_gs2',
+    #     # 'code_grad_final_generalvar4newi_multinomial_b5_gb5_temp16000_st10_et0_FreeDoM_pickscore_gs2',
+    #     # 'code_grad_final_generalvar4newi_multinomial_b5_gb5_temp18000_st10_et0_FreeDoM_pickscore_gs2',
+    #     # 'code_grad_final_generalvar4newi_multinomial_b5_gb5_temp20000_st10_et0_FreeDoM_pickscore_gs2',
+    #     'code_grad_final_generalvar4newi_multinomial_b5_gb5_temp25000_st10_et0_FreeDoM_pickscore_gs2',
+    #     'code_grad_final_generalvar4newi_multinomial_b5_gb5_temp30000_st10_et0_FreeDoM_pickscore_gs2',
+    #     'code_grad_final_generalvar4newi_multinomial_b5_gb5_temp40000_st10_et0_FreeDoM_pickscore_gs2',
+    #     'code_grad_final_generalvar4newi_multinomial_b5_gb5_temp50000_st10_et0_FreeDoM_pickscore_gs2',
+    #     'code_grad_final_generalvar4newi_multinomial_b5_gb5_temp100000_st10_et0_FreeDoM_pickscore_gs2',
+    # ]
+    
+    # table_1_pickscore_new
+    # d = [
+    #     'code40_greedy_b5_pickscore',
+    #     'code4_greedy_b5_pickscore',
+    #     'uncond_pickscore',
+    #     'code_grad_final_general4_multinomial_b5_gb4_temp3000_st10_et0_FreeDoM_pickscore_gs2',
+    #     'code_grad_final_general4_greedy_b5_gb4_st10_et0_FreeDoM_pickscore_gs2',
+    #     'code_grad_final_generalvar4newi_multinomial_b5_gb4_temp3000_st10_et0_FreeDoM_pickscore_gs2',
+    #     'code_grad_final_generalvar4newi_multinomial_b5_gb4_temp3000_st10_et0_KMeans_FreeDoM_pickscore_gs20',
+    #     'code_grad_final_generalvar4newi_greedy_b5_gb4_st10_et0_FreeDoM_pickscore_gs2',
+    # ]
+    
+    # d = [
+    #     'code_grad_final_general4_greedy_b5_gb5_st10_et0_FreeDoM_pickscore_gs2',
+    #     'code_grad_final__general4_greedy_b5_gb5_st10_et0_FreeDoM_pickscore_gs2'
+    # ]
+    
+    # d = [
+    #     'code4_greedy_b5_new_pickscore',
+    #     'uncond_new_pickscore',
+    #     'code_grad_final_general4_greedy_b5_gb4_st10_et0_FreeDoM_new_pickscore_gs2'
+    # ]
+    
+    d = [
+        'code_grad_final_general1_greedy_b5_gb5_st6_et0_FreeDoM_aesthetic_gs2'
+    ]
 
     source_dirs = [x for x in outputs_path.iterdir() if Path.is_dir(x) and x.stem in d]
     # breakpoint()
@@ -91,7 +313,7 @@ def main():
         # if 'uncond2' not in source_dir.stem:
         #     continue
 
-        scorer = source_dir.stem.split('_')[-1]
+        scorer = source_dir.stem.split('_')[-1] if 'gs' not in source_dir.stem else source_dir.stem.split('_')[-2]
         # scorer = _SCORERS[-1] if 'style' == source_dir.stem.split('_')[1] else _SCORERS[0] # source_dir.stem.split('_')[-1]
 
         # scorer = source_dir.stem.split('_')[-1]
@@ -102,6 +324,7 @@ def main():
         print(source_dir.stem)
 
         exp_rew = []
+        time_taken_per_sample = []
         win_rate = []
         fids = []
         cmmds = []
@@ -116,7 +339,8 @@ def main():
             else:
                 target_key = target_dir.stem
 
-            prompt_dirs = [x for x in target_dir.joinpath('images').iterdir() if Path.is_dir(x)]
+            # prompt_dirs = [x for x in target_dir.joinpath('images').iterdir() if Path.is_dir(x)]
+            prompt_dirs = [x for x in target_dir.iterdir() if Path.is_dir(x)]
             for prompt_dir in prompt_dirs:
 
                 if prompt_dir.stem not in uncond_rewards[scorer][target_key].keys():
@@ -128,15 +352,32 @@ def main():
 
                 with open(prompt_dir.joinpath("rewards.json"), 'r') as fp:
                     prompt_reward = json.load(fp)
+                    
+                    
+                print(f"{prompt_dir.stem} rewards are {prompt_reward}")
 
                 if len(prompt_reward) > len(uncond_rewards[scorer][target_key][prompt_dir.stem]):
                     prompt_reward = prompt_reward[:len(uncond_rewards[scorer][target_key][prompt_dir.stem])]
 
                 exp_rew.append(sum(prompt_reward)/len(prompt_reward))
                 win_rate.append((np.array(prompt_reward) > uncond_rewards[scorer][target_key][prompt_dir.stem][:len(prompt_reward)]).astype(int).sum() / len(prompt_reward))
+                  
+                with open(prompt_dir.joinpath("time.json"),'r') as f:
+                    time_taken = json.load(f)
+                time_taken_per_sample.append(time_taken['time_taken']/time_taken['num_images'])
 
                 try:
-                    uncond_path_p = outputs_path.joinpath(f'uncond_{scorer}').joinpath(target_key).joinpath(f'images/{prompt_dir.stem}')
+                    # uncond_path_p = outputs_path.joinpath(f'uncond_{scorer}').joinpath(target_key).joinpath(f'images/{prompt_dir.stem}')
+                    uncond_path_p = outputs_path.joinpath(f'uncond2_{scorer}').joinpath(target_key).joinpath(f'{prompt_dir.stem}')
+                    
+                    if 'rho' in source_dir.stem:
+                        if 'mpgd' in source_dir.stem:
+                            uncond_path_p = outputs_path.joinpath(f'mpgd_ddim100_tt1_rho0_reward_{scorer}').joinpath(target_key).joinpath(f'{prompt_dir.stem}')
+                            print(f"Fixed for {source_dir.stem}")
+                        elif 'FreeDoM' in source_dir.stem:
+                            uncond_path_p = outputs_path.joinpath(f'FreeDoM_aesthetic_rho0_{scorer}').joinpath(target_key).joinpath(f'{prompt_dir.stem}')
+                            print(f"Fixed for {source_dir.stem}")
+
                     out = os.popen(f"python {root_path}/pytorch-fid/src/pytorch_fid/fid_score.py '{uncond_path_p.as_posix()}' '{prompt_dir.as_posix()}'").read()
                     fids.append(float(out.split('  ')[-1].split('\n')[0]))
 
@@ -168,22 +409,23 @@ def main():
         perf[source_dir.stem]['win_rate'] = sum(win_rate)/len(win_rate)
         perf[source_dir.stem]['fid'] = sum(fids)/len(fids)
         perf[source_dir.stem]['cmmd'] = sum(cmmds)/len(cmmds)
+        perf[source_dir.stem]['time_taken_per_sample'] = sum(time_taken_per_sample)/(60.0*len(time_taken_per_sample))
         # perf[source_dir.stem]['ref_fid'] = sum(ref_fids)/len(ref_fids)
         # perf[source_dir.stem]['ref_cmmd'] = sum(ref_cmmds)/len(ref_cmmds)
         
-        with open('perf_ccode_b1.json', 'w') as fp:
-            json.dump(perf, fp)
+        with open(f'{name_file}.json', 'w') as fp:
+            json.dump(perf, fp, indent=4)
 
 
 def ref_divs():
 
     currhost = os.uname()[1]
     root_path = Path('/glb/data/ptxd_dash/nlasqh/PhD_GuidedDiff') if "housky" in currhost\
-                    # else Path('/tudelft.net/staff-bulk/ewi/insy/VisionLab/smukherjee/PhD_GuidedDiff')
                     else Path('/tudelft.net/staff-umbrella/StudentsCVlab/mgoyal/CoDe_ext')
+                    # else Path('/tudelft.net/staff-bulk/ewi/insy/VisionLab/smukherjee/PhD_GuidedDiff')
     outputs_path = Path('/glb/data/ptxd_dash/nlasqh/PhD_GuidedDiff/BoN/outputs') if "housky" in currhost\
-                    # else Path('/tudelft.net/staff-bulk/ewi/insy/VisionLab/smukherjee/PhD_GuidedDiff/BoN/outputs')
                     else Path('/tudelft.net/staff-umbrella/StudentsCVlab/mgoyal/CoDe_ext/BoN/outputs')
+                    # else Path('/tudelft.net/staff-bulk/ewi/insy/VisionLab/smukherjee/PhD_GuidedDiff/BoN/outputs')
 
     # Compute scores
     perf = dict()
@@ -251,20 +493,20 @@ def create_folders():
 
     currhost = os.uname()[1]
     root_path = Path('/glb/data/ptxd_dash/nlasqh/PhD_GuidedDiff') if "housky" in currhost\
-                    # else Path('/tudelft.net/staff-bulk/ewi/insy/VisionLab/smukherjee/PhD_GuidedDiff')
                     else Path('/tudelft.net/staff-umbrella/StudentsCVlab/mgoyal/CoDe_ext')
+                    # else Path('/tudelft.net/staff-bulk/ewi/insy/VisionLab/smukherjee/PhD_GuidedDiff')
     outputs_path = Path('/glb/data/ptxd_dash/nlasqh/PhD_GuidedDiff/BoN/outputs') if "housky" in currhost\
-                    # else Path('/tudelft.net/staff-bulk/ewi/insy/VisionLab/smukherjee/PhD_GuidedDiff/BoN/outputs')
                     else Path('/tudelft.net/staff-umbrella/StudentsCVlab/mgoyal/CoDe_ext/BoN/outputs')
+                    # else Path('/tudelft.net/staff-bulk/ewi/insy/VisionLab/smukherjee/PhD_GuidedDiff/BoN/outputs')
 
     newpath = Path('/glb/data/ptxd_dash/nlasqh/PhD_GuidedDiff/BoN/cherry_picking') if "housky" in currhost\
-                    # else Path('/tudelft.net/staff-bulk/ewi/insy/VisionLab/smukherjee/PhD_GuidedDiff/BoN/cherry_picking2')
                     else Path('/tudelft.net/staff-umbrella/StudentsCVlab/mgoyal/CoDe_ext/BoN/cherry_picking2')
+                    # else Path('/tudelft.net/staff-bulk/ewi/insy/VisionLab/smukherjee/PhD_GuidedDiff/BoN/cherry_picking2')
     
     source_dirs = [x for x in outputs_path.iterdir() if (Path.is_dir(x) and x.stem != 'plots')]
     for source_dir in tqdm(source_dirs):
 
-        if 'code' not in source_dir.stem or 'b1_' in source_dir.stem:
+        if 'code_grad' not in source_dir.stem or 'b1_' in source_dir.stem:
             continue
 
         target_dirs = [x for x in source_dir.iterdir() if Path.is_dir(x)]

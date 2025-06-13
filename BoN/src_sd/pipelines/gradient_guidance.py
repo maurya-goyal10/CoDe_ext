@@ -206,6 +206,7 @@ class GradSDPipeline(StableDiffusionPipeline):
                 # gradient guidance
                 sqrt_1minus_alpha_t = (1 - self.scheduler.alphas_cumprod[t] ) **0.5
                 grad = self.compute_gradient(curr_samples, prompt, noise_pred, t)
+                print(t.item())
 
                 noise_pred -= sqrt_1minus_alpha_t * self.target_guidance * grad 
 
@@ -358,6 +359,11 @@ class GradSDPipeline(StableDiffusionPipeline):
         grad = torch.autograd.grad(rewards.sum(), latent_in)[0]
 
         return grad.clone().cuda()
+
+        # grad = torch.autograd.grad(rewards.norm(p=2), latent_in)[0]
+        # grad_norm = torch.norm(grad, p=1, dim=(1, 2, 3), keepdim=True) + 1e-8  # Add small value to avoid division by zero
+        # normalized_grad = grad / grad_norm
+        # return normalized_grad.clone().cuda()
 
 def predict_x0_from_xt(
     self: DDPMScheduler,

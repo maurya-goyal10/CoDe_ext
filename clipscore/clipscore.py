@@ -8,7 +8,7 @@ Code for CLIPScore (https://arxiv.org/abs/2104.08718)
 }
 '''
 import argparse
-import clip
+from CLIP import clip
 import torch
 from PIL import Image
 from sklearn.preprocessing import normalize

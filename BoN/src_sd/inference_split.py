@@ -13,6 +13,8 @@ import random
 import torch
 import copy
 import numpy as np
+import time
+import json
 
 from PIL import Image
 from tqdm.auto import tqdm
@@ -27,8 +29,22 @@ from pipelines import (
     GradSDPipeline, 
     BoNSDPipelineI2I,
     GradSDPipelineI2I,
+    GradSDPipelineI2I_mpgd,
     CoDeSDPipeline,
+    CoDeSDExtensionPipeline,
     CoDeSDPipelineI2I,
+    GradCoDeSDPipelineI2I,
+    GradSDPipeline_fixed,
+    GradSDPipeline_fixed_new,
+    GradSDPipeline_fixed_DAS,
+    CoDeGradSD,
+    CoDeGradSDExtension,
+    CoDeGradNewSD,
+    CoDeGradSDFinal,
+    CoDeGradSDFinalGeneral,
+    CoDeGradSDFinalI2IGeneral,
+    CoDeGradNewSDVariant,
+    GradSDPipeline_fixed_mpgd,
     prepare_image, 
     encode
 )
@@ -37,7 +53,10 @@ from scorers import (
     HPSScorer, 
     FaceRecognitionScorer, 
     ClipScorer,
-    CompressibilityScorer
+    CompressibilityScorer,
+    ImageRewardScorer,
+    PickScoreScorer,
+    MultiReward
 )
 
 from typing import Optional
@@ -45,14 +64,14 @@ from argparse import ArgumentParser, Namespace
 from diffusers import DDIMScheduler, DDPMScheduler
 from diffusers.utils.torch_utils import randn_tensor
 
-currhost = os.uname()[1]
-if (currhost != 'tud1006406') and ("housky" not in currhost):  # TUD cluster
+os.environ['TRANSFORMERS_CACHE'] = '/tudelft.net/staff-umbrella/StudentsCVlab/mgoyal'
+os.environ['HF_HOME'] = '/tudelft.net/staff-umbrella/StudentsCVlab/mgoyal'
+os.environ['TORCH_HOME'] = '/tudelft.net/staff-umbrella/StudentsCVlab/mgoyal'
+# currhost = os.uname()[1]
+# if (currhost != 'tud1006406') and ("housky" not in currhost):  # TUD cluster
     # os.environ['TRANSFORMERS_CACHE'] = '/tudelft.net/staff-bulk/ewi/insy/VisionLab/smukherjee'
     # os.environ['HF_HOME'] = '/tudelft.net/staff-bulk/ewi/insy/VisionLab/smukherjee'
     # os.environ['TORCH_HOME'] = '/tudelft.net/staff-bulk/ewi/insy/VisionLab/smukherjee'
-    os.environ['TRANSFORMERS_CACHE'] = '/tudelft.net/staff-umbrella/StudentsCVlab/mgoyal'
-    os.environ['HF_HOME'] = '/tudelft.net/staff-umbrella/StudentsCVlab/mgoyal'
-    os.environ['TORCH_HOME'] = '/tudelft.net/staff-umbrella/StudentsCVlab/mgoyal'
 
 logger = logging.getLogger("guided-diff")
 
@@ -74,7 +93,7 @@ def get_parser() -> ArgumentParser:
 
 
 def run_experiment(config):
-
+    # start_time = time.time()
     # Set device
     device = (
         "cuda"
@@ -98,18 +117,134 @@ def run_experiment(config):
     elif config.guidance.method == "c_code" or config.guidance.method == "c_code_b1":
         pipe = CoDeSDPipelineI2I.from_pretrained(
             model_id, torch_dtype=torch.float16).to(device)
-    elif config.guidance.method == "i2i":
+        if config.guidance.scorer == 'pickscore':
+            pipe.set_clipscorer()
+    elif config.guidance.method == "i2i" or config.guidance.method == "i2i2":
         pipe = SDPipelineI2I.from_pretrained(
             model_id, torch_dtype=torch.float16).to(device)
-    elif config.guidance.method == 'uncond':
+        if config.guidance.scorer == 'pickscore':
+            pipe.set_clipscorer()
+    elif config.guidance.method == 'uncond' or config.guidance.method == 'uncond2' or config.guidance.method == 'uncond20':
         pipe = UncondSDPipeline.from_pretrained(
             model_id, torch_dtype=torch.float16).to(device)
     elif config.guidance.method == 'grad':
         pipe = GradSDPipeline.from_pretrained(
             model_id, torch_dtype=torch.float16).to(device)
         pipe.set_guidance(config.guidance.guidance_scale)
+    elif config.guidance.method == 'grad_fixed':
+        pipe = GradSDPipeline_fixed.from_pretrained(
+            model_id, torch_dtype=torch.float16).to(device)
+        pipe.set_guidance(config.guidance.guidance_scale)
+        pipe.set_start_time(config.guidance.start_time)
+        pipe.set_end_time(config.guidance.end_time)
+    elif config.guidance.method == 'grad_fixed_das':
+        pipe = GradSDPipeline_fixed_DAS.from_pretrained(
+            model_id, torch_dtype=torch.float16).to(device)
+        pipe.set_guidance(config.guidance.guidance_scale)
+        pipe.set_start_time(config.guidance.start_time)
+        pipe.set_end_time(config.guidance.end_time)
+    elif config.guidance.method == 'grad_fixed_new':
+        pipe = GradSDPipeline_fixed_new.from_pretrained(
+            model_id, torch_dtype=torch.float16).to(device)
+        pipe.set_guidance(config.guidance.guidance_scale)
+        pipe.set_start_time(config.guidance.start_time)
+        pipe.set_end_time(config.guidance.end_time)
+    elif config.guidance.method == 'grad_fixed_mpgd':
+        pipe = GradSDPipeline_fixed_mpgd.from_pretrained(
+            model_id, torch_dtype=torch.float16).to(device)
+        pipe.set_guidance(config.guidance.guidance_scale)
+        pipe.set_start_time(config.guidance.start_time)
+        pipe.set_end_time(config.guidance.end_time)
+    elif config.guidance.method == 'code_grad':
+        pipe = CoDeGradSD.from_pretrained(
+            model_id, torch_dtype=torch.float16).to(device)
+        pipe.set_guidance(config.guidance.guidance_scale)
+        pipe.set_start_time(config.guidance.start_time)
+        pipe.set_end_time(config.guidance.end_time)
+    elif config.guidance.method == 'code_grad_new':
+        pipe = CoDeGradNewSD.from_pretrained(
+            model_id, torch_dtype=torch.float16).to(device)
+        pipe.set_guidance(config.guidance.guidance_scale)
+        pipe.set_start_time(config.guidance.start_time)
+        pipe.set_end_time(config.guidance.end_time)
+    elif config.guidance.method == 'code_grad_final':
+        pipe = CoDeGradSDFinal.from_pretrained(
+            model_id, torch_dtype=torch.float16).to(device)
+        pipe.set_guidance(config.guidance.guidance_scale)
+        pipe.set_guidance_method(config.guidance.guidance_method)
+        pipe.set_start_time(config.guidance.start_time)
+        pipe.set_end_time(config.guidance.end_time)
+        pipe.set_do_clustering(config.guidance.do_clustering)
+        if config.guidance.do_clustering:
+            pipe.set_clustering_method(config.guidance.clustering_method)
+        pipe.set_sampling(config.guidance.sampling)
+        if config.guidance.sampling != 'greedy':
+            pipe.set_temp(config.guidance.temp)
+    elif config.guidance.method == 'code_grad_final_general':
+        pipe = CoDeGradSDFinalGeneral.from_pretrained(
+            model_id, torch_dtype=torch.float16).to(device)
+        pipe.set_guidance(config.guidance.guidance_scale)
+        pipe.set_guidance_method(config.guidance.guidance_method)
+        pipe.set_start_time(config.guidance.start_time)
+        pipe.set_end_time(config.guidance.end_time)
+        pipe.set_do_clustering(config.guidance.do_clustering)
+        pipe.set_grad_blocksize(config.guidance.guidance_blocksize)
+        # if 'batch_size_grad' in config.guidance and config.guidance.batch_size_grad is not None:
+        #     pipe.set_batch_size_grad(config.guidance.batch_size_grad)
+        if config.guidance.do_clustering:
+            pipe.set_clustering_method(config.guidance.clustering_method)
+        pipe.set_sampling(config.guidance.sampling)
+        if config.guidance.sampling != 'greedy':
+            pipe.set_temp(config.guidance.temp)
+        if config.guidance.scorer == 'compress':
+            pipe.set_zoo_method(config.guidance.zoo_method)
+            pipe.set_zoo_n_sample(config.guidance.zoo_n_sample)
+        if isinstance(config.guidance.num_samples, str) and 'var' in config.guidance.num_samples:
+            pipe.set_samples_schedule(config.guidance.samples_schedule)
+            config.guidance.num_samples = config.guidance.samples_schedule[0]
+    elif config.guidance.method == 'code_grad_final_general_i2i':
+        pipe = CoDeGradSDFinalI2IGeneral.from_pretrained(
+            model_id, torch_dtype=torch.float16).to(device)
+        pipe.set_guidance(config.guidance.guidance_scale)
+        pipe.set_guidance_method(config.guidance.guidance_method)
+        pipe.set_start_time(config.guidance.start_time)
+        pipe.set_end_time(config.guidance.end_time)
+        pipe.set_do_clustering(config.guidance.do_clustering)
+        pipe.set_grad_blocksize(config.guidance.guidance_blocksize)
+        if config.guidance.scorer == 'pickscore':
+            pipe.set_clipscorer()
+        # if 'batch_size_grad' in config.guidance and config.guidance.batch_size_grad is not None:
+        #     pipe.set_batch_size_grad(config.guidance.batch_size_grad)
+        if config.guidance.do_clustering:
+            pipe.set_clustering_method(config.guidance.clustering_method)
+        pipe.set_sampling(config.guidance.sampling)
+        if config.guidance.sampling != 'greedy':
+            pipe.set_temp(config.guidance.temp)
+        if config.guidance.scorer == 'compress':
+            pipe.set_zoo_method(config.guidance.zoo_method)
+            pipe.set_zoo_n_sample(config.guidance.zoo_n_sample)
+        if isinstance(config.guidance.num_samples, str) and 'var' in config.guidance.num_samples:
+            pipe.set_samples_schedule(config.guidance.samples_schedule)
+            config.guidance.num_samples = config.guidance.samples_schedule[0]
+    elif config.guidance.method == 'code_grad_new_variant':
+        pipe = CoDeGradNewSDVariant.from_pretrained(
+            model_id, torch_dtype=torch.float16).to(device)
+        pipe.set_guidance(config.guidance.guidance_scale)
+        pipe.set_start_time(config.guidance.start_time)
+        pipe.set_end_time(config.guidance.end_time)
+    elif config.guidance.method == 'code_grad_ext':
+        pipe = CoDeGradSDExtension.from_pretrained(
+            model_id, torch_dtype=torch.float16).to(device)
+        pipe.set_guidance(config.guidance.guidance_scale)
+        pipe.set_start_time(config.guidance.start_time)
+        pipe.set_end_time(config.guidance.end_time)
+        pipe.set_grad_block_size(config.guidance.grad_block_size)
     elif config.guidance.method == 'grad_i2i':
         pipe = GradSDPipelineI2I.from_pretrained(
+            model_id, torch_dtype=torch.float16).to(device)
+        pipe.set_guidance(config.guidance.guidance_scale)
+    elif config.guidance.method == 'grad_i2i_mpgd':
+        pipe = GradSDPipelineI2I_mpgd.from_pretrained(
             model_id, torch_dtype=torch.float16).to(device)
         pipe.set_guidance(config.guidance.guidance_scale)
     elif config.guidance.method == "ibon":
@@ -117,7 +252,19 @@ def run_experiment(config):
             model_id, torch_dtype=torch.float16).to(device)
     elif config.guidance.method == "code" or config.guidance.method == "code_b1":
         pipe = CoDeSDPipeline.from_pretrained(
-            model_id, torch_dtype=torch.float16).to(device)        
+            model_id, torch_dtype=torch.float16).to(device)    
+        pipe.set_sampling(config.guidance.sampling)
+        if config.guidance.sampling != 'greedy':
+            pipe.set_temp(config.guidance.temp)
+        if isinstance(config.guidance.num_samples, str) and 'var' in config.guidance.num_samples:
+            pipe.set_samples_schedule(config.guidance.samples_schedule)
+            config.guidance.num_samples = config.guidance.samples_schedule[0]
+    elif config.guidance.method == "code_ext" or config.guidance.method == "code_b1":
+        pipe = CoDeSDExtensionPipeline.from_pretrained(
+            model_id, torch_dtype=torch.float16).to(device)    
+    elif config.guidance.method == "c_grad_code"    :
+        pipe = GradCoDeSDPipelineI2I.from_pretrained(
+            model_id, torch_dtype=torch.float16).to(device)
     else:
         raise NotImplementedError(f'{config.guidance.method} pipeline not found!')
 
@@ -144,6 +291,12 @@ def run_experiment(config):
         scorer = FaceRecognitionScorer()
     elif config.guidance.scorer in ["styletransfer", "strokegen"]:
         scorer = ClipScorer()
+    elif config.guidance.scorer == 'imagereward':
+        scorer = ImageRewardScorer(device=device)
+    elif config.guidance.scorer == 'pickscore':
+        scorer = PickScoreScorer(device=device)
+    elif config.guidance.scorer == 'multireward':
+        scorer = MultiReward(config.guidance.scorer1,config.guidance.scorer2,config.guidance.scorer_weight_1,config.guidance.scorer_weight_2,device=device)
     else:
         scorer = HPSScorer()
 
@@ -154,10 +307,17 @@ def run_experiment(config):
     # Set project path
     savepath = Path(config.project.path).joinpath(config.project.name)
 
-    # Initial noise samples
     num_images_per_prompt = config.guidance.num_images_per_prompt
     num_channels_latents = pipe.unet.config.in_channels
-    generator = torch.Generator(device=device).manual_seed(config.project.seed)
+    # Initial noise samples
+    if config.get('scheduler') is not None and config.scheduler == 'ddim':
+        pipe.scheduler = DDIMScheduler.from_config(
+            pipe.scheduler.config, timestep_spacing="trailing")
+        pipe.scheduler.eta = 1.0
+        print("DDIM Scheduler with eta {pipe.scheduler.eta}")
+        generator = torch.Generator(device=device)
+    else:
+        generator = torch.Generator(device=device).manual_seed(config.project.seed)
 
     # Load prompts
     with open(Path(config.project.promptspath), 'r') as fp:
@@ -180,7 +340,8 @@ def run_experiment(config):
         }
     
 
-    if isinstance(scorer, ClipScorer) and config.guidance.scorer != 'strokegen':
+    if isinstance(scorer, ClipScorer) and config.guidance.scorer != 'strokegen' or isinstance(pipe,CoDeGradSDFinalI2IGeneral) or \
+        isinstance(pipe,CoDeSDPipelineI2I) or isinstance(pipe,SDPipelineI2I):
         # target_dir = [x for x in Path(
         #     '../assets/style_folder/styles').iterdir() if x.is_file()]
         
@@ -220,9 +381,10 @@ def run_experiment(config):
         target_dir = [Path(target_map[str(idx)])  for idx in config.guidance.target_idxs]
         logger.info(target_dir)
     
-
+    start_time = time.time()
     if isinstance(pipe, CoDeSDPipelineI2I) or isinstance(pipe, SDPipelineI2I)\
-        or isinstance(pipe, BoNSDPipelineI2I) or isinstance(pipe, GradSDPipelineI2I):
+        or isinstance(pipe, BoNSDPipelineI2I) or isinstance(pipe, GradSDPipelineI2I) or isinstance(pipe, GradSDPipelineI2I_mpgd)\
+        or isinstance(pipe, GradCoDeSDPipelineI2I) or isinstance(pipe,CoDeGradSDFinalI2IGeneral):
 
         # if config.input_image:
         # if (isinstance(scorer, FaceRecognitionScorer) or isinstance(scorer, ClipScorer)) or isinstance(scorer, CompressibilityScorer):
@@ -288,6 +450,7 @@ def run_experiment(config):
 
                         curr_target = copy.deepcopy(loaded_img)
                         curr_target = encode(curr_target, pipe.vae)
+                        
 
                         noise = torch.randn(curr_target.shape).to(pipe.device)
                         if percent_noise > 0.999:
@@ -379,7 +542,24 @@ def run_experiment(config):
                         num_try=counter
                     )
 
+    end_time = time.time()
+    time_taken = end_time - start_time
+    logger.info(f'Time Taken {((end_time - start_time) / 3600.0)} hours')
+    # savepath = savepath.joinpath(images).joinpath(prompts[0]).joinpath("time.json")
+    savepath = prompt_path.joinpath("time.json")
+    store_time = {}
+    if Path.exists(savepath): # if exists append else create new
+        with open(savepath, 'r') as fp:
+            store_time = json.load(fp)
+            
+    t1 = store_time.get("time_taken", 0.0)
 
+    store_time["num_images"] = num_images_per_prompt
+    store_time["time_taken"] = t1 + time_taken
+    
+    with open(savepath, 'w') as fp:
+        json.dump(store_time, fp)
+    
         
         # elif (isinstance(scorer, AestheticScorer) or isinstance(scorer, HPSScorer)):
         #     # If target image not present for init_noise conditioning - use BoN for generating target image and then use for init_noise conditioning:

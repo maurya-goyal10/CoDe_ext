@@ -16,7 +16,7 @@ from tqdm.auto import tqdm
 from diffusers import StableDiffusionPipeline
 from diffusers.pipelines.stable_diffusion import StableDiffusionPipelineOutput
 from typing import Union, Optional, List, Callable, Dict, Any
-from scorers import HPSScorer, AestheticScorer, FaceRecognitionScorer, ClipScorer
+from scorers import HPSScorer, AestheticScorer, FaceRecognitionScorer, ClipScorer,ImageRewardScorer, PickScoreScorer, MultiReward
 
 class UncondSDPipeline(StableDiffusionPipeline):
     @torch.no_grad()
@@ -212,13 +212,35 @@ class UncondSDPipeline(StableDiffusionPipeline):
                     rewards = json.load(fp)
 
             try:
-                rewards.extend(self.save_outputs(curr_samples, prompt, start = (batch_iter * self.genbatch) + offset, num_try=num_try))
+                if isinstance(self.scorer,MultiReward):
+                    rewards1 = []
+                    rewards2 = []
+                    savepath_1 = Path(self.path.joinpath(prompt)).joinpath("rewards1.json")
+                    if Path.exists(savepath_1): # if exists append else create new
+                        with open(savepath_1, 'r') as fp:
+                            rewards1 = json.load(fp)
+                    savepath_2 = Path(self.path.joinpath(prompt)).joinpath("rewards2.json")
+                    if Path.exists(savepath_2): # if exists append else create new
+                        with open(savepath_2, 'r') as fp:
+                            rewards2 = json.load(fp)
+                    rewards_, rewards1_, rewards2_ = self.save_outputs(curr_samples, prompt, start = (batch_iter * self.genbatch) + offset, num_try=num_try)
+                    rewards.extend(rewards_)
+                    rewards1.extend(rewards1_)
+                    rewards2.extend(rewards2_)
+                else:
+                    rewards.extend(self.save_outputs(curr_samples, prompt, start = (batch_iter * self.genbatch) + offset, num_try=num_try))
             except:
                 is_failed = True
                 continue
             
             with open(savepath, 'w') as fp:
                 json.dump(rewards, fp)
+                
+            if isinstance(self.scorer,MultiReward):
+                with open(savepath_1, 'w') as fp:
+                    json.dump(rewards1, fp)
+                with open(savepath_2, 'w') as fp:
+                    json.dump(rewards2, fp)
 
         return is_failed
     
@@ -241,12 +263,17 @@ class UncondSDPipeline(StableDiffusionPipeline):
         decoded_latents = torch.from_numpy(decoded_latents).permute(0,3,1,2)
 
         try:
-            if isinstance(self.scorer, HPSScorer):
+            if isinstance(self.scorer, HPSScorer) or\
+            isinstance(self.scorer, ImageRewardScorer) or\
+            isinstance(self.scorer, PickScoreScorer):
                 prompts = [prompt] * len(decoded_latents)
                 rewards = self.scorer.score(decoded_latents, prompts)
             elif isinstance(self.scorer, FaceRecognitionScorer)or\
                 isinstance(self.scorer, ClipScorer):
                 rewards = self.scorer.score(decoded_latents, self.target_img)
+            elif isinstance(self.scorer, MultiReward):
+                prompts = [prompt] * len(decoded_latents)
+                rewards,rewards1,rewards2 = self.scorer.score(decoded_latents,prompts,return_all=True)
             else:
                 rewards = self.scorer.score(decoded_latents)
         except:
@@ -261,6 +288,9 @@ class UncondSDPipeline(StableDiffusionPipeline):
 
         for idx in range(len(image_pils)):
             image_pils[idx].save(savepath.joinpath(f"{start + idx}.png"))
+            
+        if isinstance(self.scorer, MultiReward):
+            return rewards.detach().cpu().tolist(), rewards1.detach().cpu().tolist(), rewards2.detach().cpu().tolist()
 
         return rewards.detach().cpu().tolist()
     
@@ -277,8 +307,9 @@ class UncondSDPipeline(StableDiffusionPipeline):
         decoded_latents = self.decode_latents(latent)
         decoded_latents = torch.from_numpy(decoded_latents).permute(0,3,1,2)
 
-        if isinstance(self.scorer, HPSScorer):
-            
+        if isinstance(self.scorer, HPSScorer) or\
+        isinstance(self.scorer, ImageRewardScorer) or\
+        isinstance(self.scorer, PickScoreScorer):
             prompts = [prompt] * len(decoded_latents)
             out = self.scorer.score(decoded_latents, prompts)
 

@@ -19,7 +19,7 @@ from PIL import Image
 
 class ClipTextScorer(nn.Module):
     def __init__(self):
-        super(ClipScorer, self).__init__()
+        super(ClipTextScorer, self).__init__()
 
         clip_model, clip_preprocess = clip.load("RN50")
         print(clip_preprocess)
@@ -40,8 +40,8 @@ class ClipTextScorer(nn.Module):
         image_features = image_features / image_features.norm(dim=1, keepdim=True)
         
         text_features = self.encode(y)
-        logits_per_image = 100 * image_features @ y.t() # TODO: Why *100?
-        return -1 * logits_per_image
+        logits_per_image = image_features @ text_features.t() # TODO: Why *100?
+        return -1 * torch.diag(logits_per_image)
 
     def encode(self, prompt):
         prompt_tokens = clip.tokenize(prompt).to('cuda')
@@ -57,7 +57,7 @@ class ClipTextScorer(nn.Module):
 
         # prompt = prompt.repeat(im_pix.shape[0], 1)
 
-        return - (self(im_pix, prompt)).squeeze(1) 
+        return - self(im_pix, prompt)
     
     def loss_fn(self, im_pix, prompt):
 
