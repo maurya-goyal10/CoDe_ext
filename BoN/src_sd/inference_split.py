@@ -117,10 +117,14 @@ def run_experiment(config):
     elif config.guidance.method == "c_code" or config.guidance.method == "c_code_b1":
         pipe = CoDeSDPipelineI2I.from_pretrained(
             model_id, torch_dtype=torch.float16).to(device)
-    elif config.guidance.method == "i2i":
+        if config.guidance.scorer == 'pickscore':
+            pipe.set_clipscorer()
+    elif config.guidance.method == "i2i" or config.guidance.method == "i2i2":
         pipe = SDPipelineI2I.from_pretrained(
             model_id, torch_dtype=torch.float16).to(device)
-    elif config.guidance.method == 'uncond' or config.guidance.method == 'uncond2':
+        if config.guidance.scorer == 'pickscore':
+            pipe.set_clipscorer()
+    elif config.guidance.method == 'uncond' or config.guidance.method == 'uncond2' or config.guidance.method == 'uncond20':
         pipe = UncondSDPipeline.from_pretrained(
             model_id, torch_dtype=torch.float16).to(device)
     elif config.guidance.method == 'grad':
@@ -207,6 +211,8 @@ def run_experiment(config):
         pipe.set_end_time(config.guidance.end_time)
         pipe.set_do_clustering(config.guidance.do_clustering)
         pipe.set_grad_blocksize(config.guidance.guidance_blocksize)
+        if config.guidance.scorer == 'pickscore':
+            pipe.set_clipscorer()
         # if 'batch_size_grad' in config.guidance and config.guidance.batch_size_grad is not None:
         #     pipe.set_batch_size_grad(config.guidance.batch_size_grad)
         if config.guidance.do_clustering:
@@ -335,7 +341,7 @@ def run_experiment(config):
     
 
     if isinstance(scorer, ClipScorer) and config.guidance.scorer != 'strokegen' or isinstance(pipe,CoDeGradSDFinalI2IGeneral) or \
-        isinstance(pipe,CoDeSDPipelineI2I):
+        isinstance(pipe,CoDeSDPipelineI2I) or isinstance(pipe,SDPipelineI2I):
         # target_dir = [x for x in Path(
         #     '../assets/style_folder/styles').iterdir() if x.is_file()]
         

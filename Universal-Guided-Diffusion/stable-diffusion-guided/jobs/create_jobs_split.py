@@ -13,12 +13,12 @@ from pathlib import Path
 
 _TASKS = {
     # 'aesthetic': {
-    #     'weights': [25],
+    #     'weights': [30],
     #     'cmd': 'scripts/aesthetic.py --scale 5.0 --optim_forward_guidance --optim_num_steps 6 --optim_original_conditioning --ddim_steps 100'
     # },
     'pickscore': {
-        'weights': [20,25,30,40,50],
-        'cmd': 'scripts/pickscore.py --scale 5.0 --optim_forward_guidance --optim_num_steps 6 --optim_original_conditioning --ddim_steps 100'
+        'weights': [0],
+        'cmd': 'scripts/pickscore.py --scale 5.0 --optim_forward_guidance --optim_num_steps 1 --optim_original_conditioning --ddim_steps 100'
     },
     # 'face': {
     #     'weights': [20000], #[5000, 10000, 20000, 30000, 40000],
@@ -77,7 +77,10 @@ def create_job_file(param, export_path, task, target_idx, prompt_idx, strength=N
         elif re.search("commandline", line):
             
             if strength is None:
-                command = f'{_TASKS[task]["cmd"]} --text_type {prompt_idx} --indexes {target_idx} --optim_forward_guidance_wt {param} --optim_folder ./outputs/test_{task}_{param} --ckpt {MODEL_CHECKPOINT} --trials 10'
+                if task == 'aesthetic':
+                    command = f'{_TASKS[task]["cmd"]} --text_type {prompt_idx} --indexes {target_idx} --optim_forward_guidance_wt {param} --optim_folder ./outputs/test_{task}_{param}/images --ckpt {MODEL_CHECKPOINT} --trials 10 --seed 2024'
+                else:
+                    command = f'{_TASKS[task]["cmd"]} --prompt_indexes {prompt_idx} --indexes {target_idx} --optim_forward_guidance_wt {param} --optim_folder ./outputs/test_{task}_{param} --ckpt {MODEL_CHECKPOINT} --trials 10 --seed 2024'
             else:
                 command = f'{_TASKS[task]["cmd"]} --text_type {prompt_idx} --indexes {target_idx} --optim_forward_guidance_wt {param} --optim_folder ./outputs/test_{task}_{param}_r{int(float(round(strength,1))*10)} --ckpt {MODEL_CHECKPOINT} --strength {float(round(strength,1))} --trials 10'
             
@@ -109,9 +112,9 @@ def main():
         if not Path.exists(save_path):
             Path.mkdir(save_path, parents=True, exist_ok=True)
 
-        num_targets = 2
-        num_prompts = 1 # if task == 'strokegen' else 3
-        if task == 'aesthetic':
+        num_targets = 1
+        num_prompts = 51  if task == 'aesthetic' else 50
+        if task == 'aesthetic' or task=='pickscore':
             num_targets = 1 # no target. generate all samples based on text
 
         if 'i2i' in task:

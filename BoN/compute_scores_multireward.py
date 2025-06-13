@@ -61,7 +61,7 @@ def main():
     perf = dict()
 
     # name_file = 'perf_ccode_b1'
-    name_file = 'ablations/multireward_code'
+    name_file = 'ablations/multireward_uncond'
     if Path.exists(Path(f'{name_file}.json')):
         with open(f'{name_file}.json', 'r') as fp:
             perf = json.load(fp)
@@ -92,34 +92,62 @@ def main():
     #     'code_grad_final_general4_greedy_b5_gb5_st10_et0_FreeDoM_aesthetic1_pickscore1000_multireward_gs2',
     # ]
     
-    d = [
-        'code4_b5_aesthetic0_pickscore1_multireward',
-        'code4_greedy_b5_aesthetic1_pickscore0_multireward',
-        'code4_greedy_b5_aesthetic1_pickscore10_multireward',
-        'code4_greedy_b5_aesthetic1_pickscore15_multireward',
-        'code4_greedy_b5_aesthetic1_pickscore20_multireward',
-        'code4_greedy_b5_aesthetic1_pickscore25_multireward',
-        'code4_greedy_b5_aesthetic1_pickscore2_multireward',
-        'code4_greedy_b5_aesthetic1_pickscore3_multireward',
-        'code4_greedy_b5_aesthetic1_pickscore5_multireward',
-        'code4_greedy_b5_aesthetic1_pickscore30_multireward',
-        'code4_greedy_b5_aesthetic1_pickscore50_multireward',
-        'code4_greedy_b5_aesthetic1_pickscore70_multireward',
-        'code4_greedy_b5_aesthetic1_pickscore100_multireward',
-        'code4_greedy_b5_aesthetic1_pickscore150_multireward',
-        'code4_greedy_b5_aesthetic1_pickscore200_multireward',
-        'code4_greedy_b5_aesthetic1_pickscore250_multireward',
-        'code4_greedy_b5_aesthetic1_pickscore300_multireward',
-        'code4_greedy_b5_aesthetic1_pickscore350_multireward',
-        'code4_greedy_b5_aesthetic1_pickscore400_multireward',
-        'code4_greedy_b5_aesthetic1_pickscore450_multireward',
-        'code4_greedy_b5_aesthetic1_pickscore500_multireward',
-        'code4_greedy_b5_aesthetic1_pickscore750_multireward',
-        'code4_greedy_b5_aesthetic1_pickscore1000_multireward',
-    ]
+    # d = [
+    #     'code4_b5_aesthetic0_pickscore1_multireward',
+    #     'code4_greedy_b5_aesthetic1_pickscore0_multireward',
+    #     'code4_greedy_b5_aesthetic1_pickscore10_multireward',
+    #     'code4_greedy_b5_aesthetic1_pickscore15_multireward',
+    #     'code4_greedy_b5_aesthetic1_pickscore20_multireward',
+    #     'code4_greedy_b5_aesthetic1_pickscore25_multireward',
+    #     'code4_greedy_b5_aesthetic1_pickscore2_multireward',
+    #     'code4_greedy_b5_aesthetic1_pickscore3_multireward',
+    #     'code4_greedy_b5_aesthetic1_pickscore5_multireward',
+    #     'code4_greedy_b5_aesthetic1_pickscore30_multireward',
+    #     'code4_greedy_b5_aesthetic1_pickscore50_multireward',
+    #     'code4_greedy_b5_aesthetic1_pickscore70_multireward',
+    #     'code4_greedy_b5_aesthetic1_pickscore100_multireward',
+    #     'code4_greedy_b5_aesthetic1_pickscore150_multireward',
+    #     'code4_greedy_b5_aesthetic1_pickscore200_multireward',
+    #     'code4_greedy_b5_aesthetic1_pickscore250_multireward',
+    #     'code4_greedy_b5_aesthetic1_pickscore300_multireward',
+    #     'code4_greedy_b5_aesthetic1_pickscore350_multireward',
+    #     'code4_greedy_b5_aesthetic1_pickscore400_multireward',
+    #     'code4_greedy_b5_aesthetic1_pickscore450_multireward',
+    #     'code4_greedy_b5_aesthetic1_pickscore500_multireward',
+    #     'code4_greedy_b5_aesthetic1_pickscore750_multireward',
+    #     'code4_greedy_b5_aesthetic1_pickscore1000_multireward',
+    # ]
+    
+    d = ['uncond2_multireward']
+    
+    # d = [
+    #     'FreeDoM_multireward_rho2_aes1_pic0_multireward',
+    #     'FreeDoM_multireward_rho2_aes1_pic2_multireward',
+    #     'FreeDoM_multireward_rho2_aes1_pic3_multireward',
+    #     'FreeDoM_multireward_rho2_aes1_pic5_multireward',
+    #     'FreeDoM_multireward_rho2_aes1_pic10_multireward',
+    #     'FreeDoM_multireward_rho2_aes1_pic15_multireward',
+    #     'FreeDoM_multireward_rho2_aes1_pic20_multireward',
+    #     'FreeDoM_multireward_rho2_aes1_pic30_multireward',
+    #     'FreeDoM_multireward_rho2_aes1_pic50_multireward',
+    #     'FreeDoM_multireward_rho2_aes1_pic70_multireward',
+    #     'FreeDoM_multireward_rho2_aes1_pic100_multireward',
+    #     'FreeDoM_multireward_rho2_aes1_pic150_multireward',
+    #     'FreeDoM_multireward_rho2_aes1_pic200_multireward',
+    #     'FreeDoM_multireward_rho2_aes1_pic250_multireward',
+    #     'FreeDoM_multireward_rho2_aes1_pic300_multireward',
+    #     'FreeDoM_multireward_rho2_aes1_pic350_multireward',
+    #     'FreeDoM_multireward_rho2_aes1_pic400_multireward',
+    #     'FreeDoM_multireward_rho2_aes1_pic450_multireward',
+    #     'FreeDoM_multireward_rho2_aes1_pic500_multireward',
+    #     'FreeDoM_multireward_rho2_aes1_pic750_multireward',
+    #     'FreeDoM_multireward_rho2_aes1_pic1000_multireward',
+    # ]
 
     source_dirs = [x for x in outputs_path.iterdir() if Path.is_dir(x) and x.stem in d]
     # breakpoint()
+    
+    # print(source_dirs)
 
     print(perf)
 
@@ -152,7 +180,7 @@ def main():
         exp_rew = []
         exp_rew_1 = []
         exp_rew_2 = []
-        time_taken_per_sample = []
+        # time_taken_per_sample = []
         win_rate = []
         fids = []
         cmmds = []
@@ -187,8 +215,8 @@ def main():
                 with open(prompt_dir.joinpath("rewards2.json"), 'r') as fp:
                     prompt_reward_2 = json.load(fp)
                     
-                with open(prompt_dir.joinpath("time.json"),'r') as f:
-                    time_taken = json.load(f)
+                # with open(prompt_dir.joinpath("time.json"),'r') as f:
+                #     time_taken = json.load(f)
                     
                 print(f"{prompt_dir.stem} rewards are {prompt_reward}")
 
@@ -203,19 +231,19 @@ def main():
                 exp_rew_1.append(sum(prompt_reward_1)/len(prompt_reward_1))
                 exp_rew_2.append(sum(prompt_reward_2)/len(prompt_reward_2))
                 win_rate.append((np.array(prompt_reward) > uncond_rewards[scorer][target_key][prompt_dir.stem][:len(prompt_reward)]).astype(int).sum() / len(prompt_reward))
-                time_taken_per_sample.append(time_taken['time_taken']/time_taken['num_images'])
+                # time_taken_per_sample.append(time_taken['time_taken']/time_taken['num_images'])
 
                 try:
                     # uncond_path_p = outputs_path.joinpath(f'uncond_{scorer}').joinpath(target_key).joinpath(f'images/{prompt_dir.stem}')
-                    uncond_path_p = outputs_path.joinpath(f'uncond_{scorer}').joinpath(target_key).joinpath(f'{prompt_dir.stem}')
+                    uncond_path_p = outputs_path.joinpath(f'uncond2_{scorer}').joinpath(target_key).joinpath(f'{prompt_dir.stem}')
                     
-                    if 'rho' in source_dir.stem:
-                        if 'mpgd' in source_dir.stem:
-                            uncond_path_p = outputs_path.joinpath(f'mpgd_ddim100_tt1_rho0_reward_{scorer}').joinpath(target_key).joinpath(f'{prompt_dir.stem}')
-                            print(f"Fixed for {source_dir.stem}")
-                        elif 'FreeDoM' in source_dir.stem:
-                            uncond_path_p = outputs_path.joinpath(f'FreeDoM_aesthetic_rho0_{scorer}').joinpath(target_key).joinpath(f'{prompt_dir.stem}')
-                            print(f"Fixed for {source_dir.stem}")
+                    # if 'rho' in source_dir.stem:
+                    #     if 'mpgd' in source_dir.stem:
+                    #         uncond_path_p = outputs_path.joinpath(f'mpgd_ddim100_tt1_rho0_reward_{scorer}').joinpath(target_key).joinpath(f'{prompt_dir.stem}')
+                    #         print(f"Fixed for {source_dir.stem}")
+                    #     elif 'FreeDoM' in source_dir.stem:
+                    #         uncond_path_p = outputs_path.joinpath(f'FreeDoM_aesthetic_rho0_{scorer}').joinpath(target_key).joinpath(f'{prompt_dir.stem}')
+                    #         print(f"Fixed for {source_dir.stem}")
 
                     out = os.popen(f"python {root_path}/pytorch-fid/src/pytorch_fid/fid_score.py '{uncond_path_p.as_posix()}' '{prompt_dir.as_posix()}'").read()
                     fids.append(float(out.split('  ')[-1].split('\n')[0]))
@@ -250,7 +278,7 @@ def main():
         perf[source_dir.stem]['win_rate'] = sum(win_rate)/len(win_rate)
         perf[source_dir.stem]['fid'] = sum(fids)/len(fids)
         perf[source_dir.stem]['cmmd'] = sum(cmmds)/len(cmmds)
-        perf[source_dir.stem]['time_taken_per_sample'] = sum(time_taken_per_sample)/(60.0*len(time_taken_per_sample))
+        # perf[source_dir.stem]['time_taken_per_sample'] = sum(time_taken_per_sample)/(60.0*len(time_taken_per_sample))
         # perf[source_dir.stem]['ref_fid'] = sum(ref_fids)/len(ref_fids)
         # perf[source_dir.stem]['ref_cmmd'] = sum(ref_cmmds)/len(ref_cmmds)
         

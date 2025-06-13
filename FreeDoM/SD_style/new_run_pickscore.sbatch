@@ -47,7 +47,7 @@ nvidia-smi
 
 # cd ../../src_sd
 
-python txt2img.py --prompt "A passenger jet being serviced on a runway in an airport." "Three people are preparing a meal in a small kitchen." "A pair of planes parked in a small rural airfield." "A bathroom with a stand alone shower and a peep window." "Several vehicles with pieces of luggage on them with planes off to the side." "a black motorcycle is parked by the side of the road" --ddim_steps 100 --n_iter 10 --seed 2024 --H 512 --W 512 --rho 0
+python txt2img.py --prompt "A passenger jet being serviced on a runway in an airport." "Three people are preparing a meal in a small kitchen." "A pair of planes parked in a small rural airfield." "A bathroom with a stand alone shower and a peep window." "Several vehicles with pieces of luggage on them with planes off to the side." "a black motorcycle is parked by the side of the road" --ddim_steps 100 --n_iter 10 --seed 2024 --H 512 --W 512 --rho 0.2
 
 echo -n "This run completed on: "
 date

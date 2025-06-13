@@ -393,6 +393,7 @@ def main():
             continue
 
         text = [prompt]
+        print(text)
 
         torch.cuda.empty_cache()
 

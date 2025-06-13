@@ -206,7 +206,6 @@ class CoDeGradSDFinalI2IGeneral(StableDiffusionPipeline):
                 
                 if t > 1000 * percent_noise:
                     continue
-                print(f"percent_noise is {percent_noise} and t is {t} and curr_samples shape is {curr_samples.shape}")
 
                 step_counter += 1
                 
@@ -382,6 +381,8 @@ class CoDeGradSDFinalI2IGeneral(StableDiffusionPipeline):
                     else:
                         if isinstance(self.scorer, MultiReward):
                             rewards,rewards1,rewards2 = self.compute_scores(curr_samples, prompt,return_all=True)
+                        elif isinstance(self.scorer, PickScoreScorer):
+                            rewards_igram = self.compute_score_igram(curr_samples)
                         else:
                             rewards = self.compute_scores(curr_samples, prompt)
                         rewards = self.compute_scores(curr_samples, prompt)
@@ -419,6 +420,21 @@ class CoDeGradSDFinalI2IGeneral(StableDiffusionPipeline):
 
             with open(savepath, 'w') as fp:
                 json.dump(store_rewards, fp)
+                
+            if isinstance(self.scorer, PickScoreScorer):
+                store_igram_rewards = []
+                rewards_igram = torch.cat([x.unsqueeze(0) for x in rewards_igram.chunk(n_samples)], dim=0)
+                savepath_igram = Path(self.path.joinpath(prompt)).joinpath("rewards_igram.json")
+                if Path.exists(savepath_igram): # if exists append else create new
+                    with open(savepath_igram, 'r') as fp:
+                        store_igram_rewards = json.load(fp)
+                        
+                rewards_igram = rewards_igram.permute(1,0)
+                rewards_igram = torch.cat([x[select_ind[idx]].unsqueeze(0) for idx, x in enumerate(rewards_igram)], dim=0) # TODO: Make it efficient
+                store_igram_rewards.extend(rewards_igram.cpu().numpy().tolist())
+
+                with open(savepath_igram, 'w') as fp:
+                    json.dump(store_igram_rewards, fp)
                 
             if isinstance(self.scorer, MultiReward):
                 store_rewards1 = []
@@ -548,6 +564,9 @@ class CoDeGradSDFinalI2IGeneral(StableDiffusionPipeline):
     def set_batch_size_grad(self,batch_size_grad):
         self.batch_size_grad = batch_size_grad
         
+    def set_clipscorer(self):
+        self.clipscorer = ClipScorer()
+        
     def save_outputs(self, latent, prompt, start, num_try):
         decoded_latents = self.decode_latents(latent)
         image_pils = self.numpy_to_pil(decoded_latents)
@@ -582,9 +601,12 @@ class CoDeGradSDFinalI2IGeneral(StableDiffusionPipeline):
         return rewards.detach().cpu().tolist()
     
     def set_target(self, target_img):
-        if isinstance(self.scorer, ClipScorer) or isinstance(self.scorer, PickScoreScorer):
+        if isinstance(self.scorer, ClipScorer):
             target_img = torchvision.transforms.ToTensor()(target_img)
             self.target_img = self.scorer.encode(target_img.unsqueeze(0))
+        elif isinstance(self.scorer, PickScoreScorer):
+            target_img = torchvision.transforms.ToTensor()(target_img)
+            self.target_img = self.clipscorer.encode(target_img.unsqueeze(0))
         else:
             self.target_img = torchvision.transforms.ToTensor()(target_img)
         # print(self.target_img.shape)
@@ -616,6 +638,13 @@ class CoDeGradSDFinalI2IGeneral(StableDiffusionPipeline):
 
         return out
     
+    @torch.no_grad()
+    def compute_score_igram(self,latent):
+        decoded_latents = self.decode_latents(latent)
+        decoded_latents = torch.from_numpy(decoded_latents).permute(0,3,1,2)
+        
+        return self.clipscorer.score(decoded_latents, self.target_img)
+    
     @torch.enable_grad()
     def compute_gradient(self, latents, prompt, noise_pred, t):
         # print(f"The shape of the latents is {latents.shape} ")
@@ -644,7 +673,7 @@ class CoDeGradSDFinalI2IGeneral(StableDiffusionPipeline):
             
         # Process images
         im_pix = ((im_pix_un / 2) + 0.5).clamp(0, 1).cpu()
-        print(f"The shape of the image is: {im_pix.shape}")
+        # print(f"The shape of the image is: {im_pix.shape}")
         # print(im_pix.shape)
         
         # Compute rewards/loss based on scorer type

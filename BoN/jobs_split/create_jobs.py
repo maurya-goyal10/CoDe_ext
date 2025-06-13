@@ -50,7 +50,7 @@ def main():
 
     for method in methods:
 
-        if method.stem not in ['c_code']: # 'code_grad', 'uncond'
+        if method.stem not in ['code_grad_final_general']: # 'code_grad', 'uncond'
             continue
 
         curr_path = Path(method.stem)
@@ -63,8 +63,10 @@ def main():
         # breakpoint()
         for config in configs: 
             
-            # if 'multireward' in config.stem:
+            # if 'p0' in config.stem:
             #     continue
+            if 'pickscore' in config.stem:
+                continue
             # if not 'general4_' in config.stem:
             #     continue
             # if not any(clustering in config.stem for clustering in ('KMeans','HDBSCAN')):

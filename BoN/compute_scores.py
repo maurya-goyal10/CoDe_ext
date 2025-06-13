@@ -6,6 +6,8 @@ from PIL import Image
 from tqdm.auto import tqdm
 from pathlib import Path
 
+import uuid
+
 _SCORERS = ['aesthetic'] # ['strokegen', 'facedetector', 'styletransfer'] 'strokegen', 'facedetector'
 
 _MAP_UG = {
@@ -61,7 +63,7 @@ def main():
     perf = dict()
 
     # name_file = 'perf_ccode_b1'
-    name_file = 'ablations/table_1_aesthetic_new'
+    name_file = 'ablations/blockwise_grad'
     if Path.exists(Path(f'{name_file}.json')):
         with open(f'{name_file}.json', 'r') as fp:
             perf = json.load(fp)
@@ -88,16 +90,16 @@ def main():
     # ]
     
     # table_1_aesthetic
-    d = [
-        'uncond_aesthetic',
-        'code4_greedy_b5_aesthetic',
-        'code40_greedy_b5_aesthetic',
-        'code_grad_final_general4_greedy_b5_gb5_st6_et0_FreeDoM_aesthetic_gs2',
-        'code_grad_final_general4_multinomial_b5_gb5_temp1000_st6_et0_FreeDoM_aesthetic_gs2',
-        'code_grad_final_generalvar4reviiiiii_greedy_b5_gb5_st6_et0_FreeDoM_aesthetic_gs2',
-        'code_grad_final_generalvar4reviiiiii_multinomial_b5_gb5_temp1000_st6_et0_FreeDoM_aesthetic_gs2',
-        'code_grad_final_generalvar4reviiiiii_multinomial_b5_gb5_temp1000_st6_et0_KMeans_FreeDoM_aesthetic_gs20'
-        ]
+    # d = [
+    #     'uncond_aesthetic',
+    #     'code4_greedy_b5_aesthetic',
+    #     'code40_greedy_b5_aesthetic',
+    #     'code_grad_final_general4_greedy_b5_gb5_st6_et0_FreeDoM_aesthetic_gs2',
+    #     'code_grad_final_general4_multinomial_b5_gb5_temp1000_st6_et0_FreeDoM_aesthetic_gs2',
+    #     'code_grad_final_generalvar4reviiiiii_greedy_b5_gb5_st6_et0_FreeDoM_aesthetic_gs2',
+    #     'code_grad_final_generalvar4reviiiiii_multinomial_b5_gb5_temp1000_st6_et0_FreeDoM_aesthetic_gs2',
+    #     'code_grad_final_generalvar4reviiiiii_multinomial_b5_gb5_temp1000_st6_et0_KMeans_FreeDoM_aesthetic_gs20'
+    #     ]
     # d = ['code_grad_final_general4_greedy_b5_gb5_st6_et0_FreeDoM_aesthetic_gs2',
     #      'code_grad_final_general4_multinomial_b5_gb5_temp1000_st6_et0_FreeDoM_aesthetic_gs2',
     #      'code_grad_final_generalvar4reviiiiii_multinomial_b5_gb5_temp1000_st6_et0_FreeDoM_aesthetic_gs2']
@@ -158,13 +160,18 @@ def main():
     #      'code_grad_final_generalvar4newiii_greedy_b5_gb5_st10_et0_FreeDoM_pickscore_gs2',
     #      ]
             
-    # d = ['code40_greedy_b5_pickscore',
+    # d = [
+    #     'code40_greedy_b5_pickscore',
     #     'code4_greedy_b5_pickscore',
-    #     'uncond2_pickscore',
+    #     'uncond_pickscore',
+    #     'code_grad_final_general4_greedy_b5_gb2_st10_et0_FreeDoM_pickscore_gs2',
+    #     'code_grad_final_general4_greedy_b5_gb3_st10_et0_FreeDoM_pickscore_gs2',
+    #     'code_grad_final_general4_greedy_b5_gb4_st10_et0_FreeDoM_pickscore_gs2',
     #     'code_grad_final_general4_greedy_b5_gb5_st10_et0_FreeDoM_pickscore_gs2',
-    #     'code_grad_final_general4_greedy_b5_gb5_st9_et0_FreeDoM_pickscore_gs2',
-    #     'code_grad_final_general4_greedy_b5_gb5_st8_et0_FreeDoM_pickscore_gs2',
-    #     'code_grad_final_general4_greedy_b5_gb5_st95_et0_FreeDoM_pickscore_gs2',
+    #     # 'code_grad_final_general4_greedy_b5_gb5_st10_et0_FreeDoM_pickscore_gs2',
+    #     # 'code_grad_final_general4_greedy_b5_gb5_st9_et0_FreeDoM_pickscore_gs2',
+    #     # 'code_grad_final_general4_greedy_b5_gb5_st8_et0_FreeDoM_pickscore_gs2',
+    #     # 'code_grad_final_general4_greedy_b5_gb5_st95_et0_FreeDoM_pickscore_gs2',
     #     ]
 
     # d = ['code_grad4_b5_st7_et3_aesthetic_gs0',
@@ -226,7 +233,8 @@ def main():
     
     #ablations_compress_testing_
     # d = [
-    #     # 'code4_greedy_b5_compress',
+    #     # 'uncond_compress'
+    #     'code4_greedy_b5_compress',
     #     # 'code40_greedy_b5_compress',
     #     # 'code_grad_final_general4_greedy_b5_gb5_st10_et0_antithetic_1_FreeDoM_compress_gs2',
     #     # 'code_grad_final_general4_greedy_b5_gb5_st10_et0_antithetic_5_FreeDoM_compress_gs2',
@@ -257,22 +265,32 @@ def main():
     #     'code_grad_final_generalvar4newi_multinomial_b5_gb5_temp100000_st10_et0_FreeDoM_pickscore_gs2',
     # ]
     
-    # table_1_pickscore
+    # table_1_pickscore_new
     # d = [
-    #     # 'code40_greedy_b5_pickscore',
-    #     # 'code4_greedy_b5_pickscore',
-    #     'uncond2_pickscore',
-    #     # 'code_grad_final_general4_multinomial_b5_gb5_temp3000_st10_et0_FreeDoM_pickscore_gs2',
-    #     # 'code_grad_final_general4_greedy_b5_gb5_st10_et0_FreeDoM_pickscore_gs2',
-    #     # 'code_grad_final_generalvar4newi_multinomial_b5_gb5_temp3000_st10_et0_FreeDoM_pickscore_gs2',
-    #     # 'code_grad_final_generalvar4newi_multinomial_b5_gb5_temp3000_st10_et0_KMeans_FreeDoM_pickscore_gs20',
-    #     # 'code_grad_final_generalvar4newi_greedy_b5_gb5_st10_et0_FreeDoM_pickscore_gs2',
+    #     'code40_greedy_b5_pickscore',
+    #     'code4_greedy_b5_pickscore',
+    #     'uncond_pickscore',
+    #     'code_grad_final_general4_multinomial_b5_gb4_temp3000_st10_et0_FreeDoM_pickscore_gs2',
+    #     'code_grad_final_general4_greedy_b5_gb4_st10_et0_FreeDoM_pickscore_gs2',
+    #     'code_grad_final_generalvar4newi_multinomial_b5_gb4_temp3000_st10_et0_FreeDoM_pickscore_gs2',
+    #     'code_grad_final_generalvar4newi_multinomial_b5_gb4_temp3000_st10_et0_KMeans_FreeDoM_pickscore_gs20',
+    #     'code_grad_final_generalvar4newi_greedy_b5_gb4_st10_et0_FreeDoM_pickscore_gs2',
     # ]
     
     # d = [
     #     'code_grad_final_general4_greedy_b5_gb5_st10_et0_FreeDoM_pickscore_gs2',
     #     'code_grad_final__general4_greedy_b5_gb5_st10_et0_FreeDoM_pickscore_gs2'
     # ]
+    
+    # d = [
+    #     'code4_greedy_b5_new_pickscore',
+    #     'uncond_new_pickscore',
+    #     'code_grad_final_general4_greedy_b5_gb4_st10_et0_FreeDoM_new_pickscore_gs2'
+    # ]
+    
+    d = [
+        'code_grad_final_general1_greedy_b5_gb5_st6_et0_FreeDoM_aesthetic_gs2'
+    ]
 
     source_dirs = [x for x in outputs_path.iterdir() if Path.is_dir(x) and x.stem in d]
     # breakpoint()
@@ -344,9 +362,9 @@ def main():
                 exp_rew.append(sum(prompt_reward)/len(prompt_reward))
                 win_rate.append((np.array(prompt_reward) > uncond_rewards[scorer][target_key][prompt_dir.stem][:len(prompt_reward)]).astype(int).sum() / len(prompt_reward))
                   
-                # with open(prompt_dir.joinpath("time.json"),'r') as f:
-                #     time_taken = json.load(f)
-                # time_taken_per_sample.append(time_taken['time_taken']/time_taken['num_images'])
+                with open(prompt_dir.joinpath("time.json"),'r') as f:
+                    time_taken = json.load(f)
+                time_taken_per_sample.append(time_taken['time_taken']/time_taken['num_images'])
 
                 try:
                     # uncond_path_p = outputs_path.joinpath(f'uncond_{scorer}').joinpath(target_key).joinpath(f'images/{prompt_dir.stem}')
@@ -391,7 +409,7 @@ def main():
         perf[source_dir.stem]['win_rate'] = sum(win_rate)/len(win_rate)
         perf[source_dir.stem]['fid'] = sum(fids)/len(fids)
         perf[source_dir.stem]['cmmd'] = sum(cmmds)/len(cmmds)
-        # perf[source_dir.stem]['time_taken_per_sample'] = sum(time_taken_per_sample)/(60.0*len(time_taken_per_sample))
+        perf[source_dir.stem]['time_taken_per_sample'] = sum(time_taken_per_sample)/(60.0*len(time_taken_per_sample))
         # perf[source_dir.stem]['ref_fid'] = sum(ref_fids)/len(ref_fids)
         # perf[source_dir.stem]['ref_cmmd'] = sum(ref_cmmds)/len(ref_cmmds)
         

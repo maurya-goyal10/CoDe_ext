@@ -5,8 +5,8 @@
 # -----------------------------------------------------------------------------
 
 #SBATCH --partition=insy,general
-#SBATCH --qos=medium
-#SBATCH --time=10:00:00
+#SBATCH --qos=short
+#SBATCH --time=04:00:00
 #SBATCH --output=slurm.out
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=4

@@ -23,6 +23,7 @@ to_tensor = torchvision.transforms.Compose([
 from .clip.base_clip import CLIPEncoder
 from ldm.models.diffusion.aesthetic.aesthetic_scorer import AestheticScorer
 from ldm.models.diffusion.pickscore.pickscore_scorer import PickScoreScorer
+from ldm.models.diffusion.multireward.multi_reward import MultiReward
 
 from pathlib import Path
 
@@ -290,7 +291,7 @@ class DDIMSampler(object):
                     # print(f"Shape of the residual is {residual.shape} and the residual is {residual}")
                     # print(f"the residual is {residual}")
                     norm = -1*torch.linalg.norm(residual)
-                elif isinstance(self.image_encoder,PickScoreScorer):
+                elif isinstance(self.image_encoder,PickScoreScorer) or isinstance(self.image_encoder,MultiReward):
                     # print("Aesthetic")
                     residual = self.image_encoder.loss_fn(D_x0_t,prompt)
                     # print(f"Shape of the residual is {residual.shape} and the residual is {residual}")

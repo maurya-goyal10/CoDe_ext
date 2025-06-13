@@ -316,7 +316,7 @@ def main():
     parser.add_argument(
         "--seed",
         type=int,
-        default=42,
+        default=2024,
         help="the seed (for reproducible sampling)",
     )
 
@@ -334,7 +334,7 @@ def main():
     parser.add_argument('--optim_print', action='store_true', default=False)
     parser.add_argument('--optim_folder', default='./temp/')
     parser.add_argument("--optim_num_steps", nargs="+", default=[1], type=int)
-    parser.add_argument('--text_type', type=int, default=1)
+    parser.add_argument('--text_type',nargs="+", default=[0], type=int)
     parser.add_argument("--text", default=None)
     parser.add_argument("--batch_size", default=1, type=int)
     parser.add_argument('--face_folder', default='./data/face_data')
@@ -379,7 +379,8 @@ def main():
 
     # prompts = [opt.text]
 
-    for prompt in prompts[opt.indexes]:
+    prompts = np.array(prompts) 
+    for prompt in prompts[opt.text_type]:
 
         print(prompt)
 
@@ -434,7 +435,7 @@ def main():
 
             # rewards.extend(reward.detach().cpu().tolist())
 
-            utils.save_image(x_samples_ddim, f'{savepath}/new_img_{multiple_tries + offset}.png')
+            utils.save_image(x_samples_ddim, f'{savepath}/{multiple_tries + offset}.png')
 
             if Path.exists(savepath.joinpath("rewards.json")): # append rewards to file
 

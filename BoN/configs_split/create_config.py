@@ -5,17 +5,17 @@ import numpy as np
 from pathlib import Path
 from omegaconf import OmegaConf
 
-_METHODS = ['c_code'] # ['c_bon', 'i2i'] # 'ibon', ibon_i2i', 'bon', 'uncond', 'i2i', 'bon_i2i', 'c_code', 'grad_i2i_mpgd', 'grad', 'code_grad', 'code', 'code_grad', 'code_grad_final_general'
+_METHODS = ['code_grad_final_general'] # ['c_bon', 'i2i'] # 'ibon', ibon_i2i', 'bon', 'uncond', 'i2i', 'bon_i2i', 'c_code', 'grad_i2i_mpgd', 'grad', 'code_grad', 'code', 'code_grad', 'code_grad_final_general'
 
 _SCORERS = {
-    # 'aesthetic': '../assets/eval_simple_animals.txt', 
+    'aesthetic': '../assets/eval_simple_animals.txt', 
     # 'hpsv2': '../assets/hps_v2_all_eval.txt', 
     # 'facedetector': '../assets/face.txt', 
     # 'styletransfer': '../assets/style.txt',
     # 'strokegen': '../assets/stroke.txt',
     # 'compress': '../assets/compressibility.txt',
     # 'imagereward': '../assets/hps_v2_all_eval.txt', 
-    'pickscore': '../assets/hps_v2_all_eval.txt',
+    # 'pickscore': '../assets/hps_v2_all_eval.txt',
     # 'multireward': '../assets/eval_simple_animals.txt',
 }
 
@@ -62,7 +62,7 @@ def create_function():
             #     continue
 
             num_prompts = 51 if scorer in ['aesthetic','multireward'] else 50
-            num_targets = 1 # if scorer == 'strokegen' else 3
+            num_targets = 3 # if scorer == 'strokegen' else 3
             if scorer == 'compress':
                 num_prompts = 4
 
@@ -70,12 +70,12 @@ def create_function():
 
             if method == 'uncond':
 
-                for prompt_idx in range(6,num_prompts):
+                for prompt_idx in range(1,6):
 
                     for target_idx in range(num_targets):
 
                         curr_config = copy.deepcopy(template)
-                        curr_config.project.name = f'{method}_{scorer}'
+                        curr_config.project.name = f'{method}_new_{scorer}'
                         curr_config.project.promptspath = _SCORERS[scorer]
 
                         curr_config.guidance.method = method
@@ -85,41 +85,138 @@ def create_function():
                         if "target_idxs" in curr_config.guidance:
                             del curr_config.guidance["target_idxs"]
                         curr_config.guidance.block_size = 5
-                        curr_config.guidance.num_images_per_prompt = 10
-                        curr_config.guidance.num_gen_target_images_per_prompt = 10
+                        curr_config.guidance.num_images_per_prompt = 50
+                        curr_config.guidance.num_gen_target_images_per_prompt = 50
                         
 
-                        filename = f'{method}_p{prompt_idx}_{scorer}'
+                        filename = f'{method}_p{prompt_idx}_new_{scorer}'
                         # filename = f'{method}_p{prompt_idx}_t{target_idx}_{scorer}'
                         savepath = curr_path.joinpath(f'{filename}.yaml')
                         OmegaConf.save(curr_config, savepath)
                         
             elif method == 'uncond2':
-
-                for prompt_idx in range(6,num_prompts):
-
-                    for target_idx in range(num_targets):
-
-                        curr_config = copy.deepcopy(template)
-                        curr_config.project.name = f'{method}_{scorer}'
-                        curr_config.project.promptspath = _SCORERS[scorer]
-                        curr_config.project.seed = 2025
-
-                        curr_config.guidance.method = method
-                        curr_config.guidance.scorer = scorer
-                        curr_config.guidance.target_idxs = [target_idx]
-                        curr_config.guidance.prompt_idxs = [prompt_idx]
-                        if "target_idxs" in curr_config.guidance:
-                            del curr_config.guidance["target_idxs"]
-                        curr_config.guidance.block_size = 5
-                        curr_config.guidance.num_images_per_prompt = 10
-                        curr_config.guidance.num_gen_target_images_per_prompt = 10
+                
+                if scorer == "multireward":
+                        scorer1 = "aesthetic"
+                        scorer2 = "pickscore"
                         
+                        for prompt_idx in range(1):
 
-                        filename = f'{method}_p{prompt_idx}_{scorer}'
-                        # filename = f'{method}_p{prompt_idx}_t{target_idx}_{scorer}'
-                        savepath = curr_path.joinpath(f'{filename}.yaml')
-                        OmegaConf.save(curr_config, savepath)
+                            for target_idx in range(num_targets):
+
+                                curr_config = copy.deepcopy(template)
+                                curr_config.guidance.scorer1 =  scorer1
+                                curr_config.guidance.scorer2 =  scorer2
+                                curr_config.guidance.scorer_weight_1 = 1
+                                curr_config.guidance.scorer_weight_2 = 1
+                                curr_config.project.name = f'{method}_new_{scorer}'
+                                curr_config.project.promptspath = _SCORERS[scorer]
+                                curr_config.project.seed = 2025
+
+                                curr_config.guidance.method = method
+                                curr_config.guidance.scorer = scorer
+                                curr_config.guidance.target_idxs = [target_idx]
+                                curr_config.guidance.prompt_idxs = [prompt_idx]
+                                if "target_idxs" in curr_config.guidance:
+                                    del curr_config.guidance["target_idxs"]
+                                curr_config.guidance.block_size = 5
+                                curr_config.guidance.num_images_per_prompt = 10
+                                curr_config.guidance.num_gen_target_images_per_prompt = 10
+                                
+
+                                filename = f'{method}_p{prompt_idx}_{scorer1}{1}_{scorer2}{1}_{scorer}'
+                                # filename = f'{method}_p{prompt_idx}_t{target_idx}_{scorer}'
+                                savepath = curr_path.joinpath(f'{filename}.yaml')
+                                OmegaConf.save(curr_config, savepath)                                                              
+                    
+                else:
+
+                    for prompt_idx in range(1,6):
+
+                        for target_idx in range(num_targets):
+
+                            curr_config = copy.deepcopy(template)
+                            curr_config.project.name = f'{method}_new_{scorer}'
+                            curr_config.project.promptspath = _SCORERS[scorer]
+                            curr_config.project.seed = 2025
+
+                            curr_config.guidance.method = method
+                            curr_config.guidance.scorer = scorer
+                            curr_config.guidance.target_idxs = [target_idx]
+                            curr_config.guidance.prompt_idxs = [prompt_idx]
+                            if "target_idxs" in curr_config.guidance:
+                                del curr_config.guidance["target_idxs"]
+                            curr_config.guidance.block_size = 5
+                            curr_config.guidance.num_images_per_prompt = 50
+                            curr_config.guidance.num_gen_target_images_per_prompt = 50
+                            
+
+                            filename = f'{method}_p{prompt_idx}_new_{scorer}'
+                            # filename = f'{method}_p{prompt_idx}_t{target_idx}_{scorer}'
+                            savepath = curr_path.joinpath(f'{filename}.yaml')
+                            OmegaConf.save(curr_config, savepath) 
+                                                                                         
+            elif method == 'uncond20':
+                
+                if scorer == "multireward":
+                        scorer1 = "aesthetic"
+                        scorer2 = "pickscore"
+                        
+                        for prompt_idx in range(6):
+
+                            for target_idx in range(num_targets):
+
+                                curr_config = copy.deepcopy(template)
+                                curr_config.guidance.scorer1 =  scorer1
+                                curr_config.guidance.scorer2 =  scorer2
+                                curr_config.guidance.scorer_weight_1 = 1
+                                curr_config.guidance.scorer_weight_2 = 1
+                                curr_config.project.name = f'{method}_{scorer}'
+                                curr_config.project.promptspath = _SCORERS[scorer]
+                                curr_config.project.seed = 2025
+
+                                curr_config.guidance.method = method
+                                curr_config.guidance.scorer = scorer
+                                curr_config.guidance.target_idxs = [target_idx]
+                                curr_config.guidance.prompt_idxs = [prompt_idx]
+                                if "target_idxs" in curr_config.guidance:
+                                    del curr_config.guidance["target_idxs"]
+                                curr_config.guidance.block_size = 5
+                                curr_config.guidance.num_images_per_prompt = 10
+                                curr_config.guidance.num_gen_target_images_per_prompt = 10
+                                
+
+                                filename = f'{method}_p{prompt_idx}_{scorer1}{1}_{scorer2}{1}_{scorer}'
+                                # filename = f'{method}_p{prompt_idx}_t{target_idx}_{scorer}'
+                                savepath = curr_path.joinpath(f'{filename}.yaml')
+                                OmegaConf.save(curr_config, savepath)                                                              
+                    
+                else:
+
+                    for prompt_idx in range(num_prompts):
+
+                        for target_idx in range(num_targets):
+
+                            curr_config = copy.deepcopy(template)
+                            curr_config.project.name = f'{method}_{scorer}'
+                            curr_config.project.promptspath = _SCORERS[scorer]
+                            curr_config.project.seed = 20
+
+                            curr_config.guidance.method = method
+                            curr_config.guidance.scorer = scorer
+                            curr_config.guidance.target_idxs = [target_idx]
+                            curr_config.guidance.prompt_idxs = [prompt_idx]
+                            if "target_idxs" in curr_config.guidance:
+                                del curr_config.guidance["target_idxs"]
+                            curr_config.guidance.block_size = 5
+                            curr_config.guidance.num_images_per_prompt = 10
+                            curr_config.guidance.num_gen_target_images_per_prompt = 10
+                            
+
+                            filename = f'{method}_p{prompt_idx}_{scorer}'
+                            # filename = f'{method}_p{prompt_idx}_t{target_idx}_{scorer}'
+                            savepath = curr_path.joinpath(f'{filename}.yaml')
+                            OmegaConf.save(curr_config, savepath)                                                              
             
             elif method in ['code_b1']:
 
@@ -291,7 +388,7 @@ def create_function():
 
                                     else:
                                         curr_config = copy.deepcopy(template)
-                                        curr_config.project.name = f'{method}{num_samples}_{sampling}_b{block_size}_{scorer}'
+                                        curr_config.project.name = f'{method}{num_samples}_{sampling}_b{block_size}_new_{scorer}'
                                         curr_config.project.promptspath = _SCORERS[scorer]
 
                                         curr_config.guidance.method = method
@@ -299,8 +396,8 @@ def create_function():
                                         curr_config.guidance.num_samples = num_samples
                                         curr_config.guidance.block_size = block_size
                                         curr_config.guidance.prompt_idxs = [prompt_idx]
-                                        curr_config.guidance.num_images_per_prompt = 10
-                                        curr_config.guidance.num_gen_target_images_per_prompt = 10
+                                        curr_config.guidance.num_images_per_prompt = 50
+                                        curr_config.guidance.num_gen_target_images_per_prompt = 50
                                         curr_config.guidance.sampling = sampling
                                         if num_samples in samples_schedules:
                                             curr_config.guidance.samples_schedule = samples_schedules[num_samples]
@@ -308,7 +405,7 @@ def create_function():
                                         if "target_idxs" in curr_config.guidance:
                                             del curr_config.guidance["target_idxs"]
 
-                                        filename = f'{method}{num_samples}_{sampling}_p{prompt_idx}_b{block_size}_{scorer}'
+                                        filename = f'{method}{num_samples}_{sampling}_p{prompt_idx}_b{block_size}_new_{scorer}'
                                         if sampling != "greedy":
                                             curr_config.guidance.temp = temp
                                             curr_config.project.name = f'{method}{num_samples}_{sampling}_temp{temp}_b{block_size}_{scorer}'   
@@ -518,27 +615,27 @@ def create_function():
 
             elif method in ['code_grad_final_general']:
                 
-                for num_samples in ['var4newi']:#['var4newi']:# ['var4new','var4newi','var4newii']:# [4]:#["var4","var4i","var4ii","var4iii","var4iiii","var4iiiii","var4rev","var4revi","var4revii","var4reviii","var4reviiii","var4reviiiii","var4reviiiiii","var4reviiiiiii"]: #[10, 20, 30, 40]: # [10, 20, 30, 40]:
+                for num_samples in [1]:#['var4newi']:# ['var4new','var4newi','var4newii']:# [4]:#["var4","var4i","var4ii","var4iii","var4iiii","var4iiiii","var4rev","var4revi","var4revii","var4reviii","var4reviiii","var4reviiiii","var4reviiiiii","var4reviiiiiii"]: #[10, 20, 30, 40]: # [10, 20, 30, 40]:
 
                     for block_size in [5]: # [5, 10, 20, 50, 100]
                         
                         for guidance_blocksize in [5]:
                         
-                            for st in [1.0]:
+                            for st in [0.6]:
                                 et = 0.0
                                 
                                 for guidance_scale in [0.2]:# [0.3,0.4,0.5,0.7]: # [0.5,1,10,15]
 
-                                    for prompt_idx in range(6,num_prompts):
+                                    for prompt_idx in range(num_prompts):
                                         
-                                        for do_clustering in [True]: # [True, False]
+                                        for do_clustering in [False]: # [True, False]
                                             
                                             for clustering_method in ["KMeans"]: # ["KMeans", "HDBSCAN"]
                                                 if not do_clustering:
                                                     clustering_method = None
                                                     
                                             
-                                                for sampling in ['multinomial']: # ['greedy', "multinomial"]:
+                                                for sampling in ['greedy']: # ['greedy', "multinomial"]:
                                                     
                                                     for temp in [3000]:# [25000,30000,40000,50000,100000]:#[3000,16000,18000]:#[500,1000,2000,4000,5000,7000,10000,12000,15000,20000]:
                                                         if(sampling == "greedy"):
@@ -773,20 +870,24 @@ def create_function():
                                                                 
             elif method in ['code_grad_final_general_i2i']:
                 
+                # num_prompts = 6
+                
                 for num_samples in [4]:#['var4newi']:# ['var4new','var4newi','var4newii']:# [4]:#["var4","var4i","var4ii","var4iii","var4iiii","var4iiiii","var4rev","var4revi","var4revii","var4reviii","var4reviiii","var4reviiiii","var4reviiiiii","var4reviiiiiii"]: #[10, 20, 30, 40]: # [10, 20, 30, 40]:
 
                     for block_size in [5]: # [5, 10, 20, 50, 100]
                         
-                        for guidance_blocksize in [5]:
+                        for guidance_blocksize in [2]:
                             
-                            for percent_noise in [0.6,0.7,0.8]:
+                            for percent_noise in [0.6]:
                         
                                 for st in [percent_noise]:
                                     et = 0.0
                                     
-                                    for guidance_scale in [0.2]:# [0.3,0.4,0.5,0.7]: # [0.5,1,10,15]
+                                    for guidance_scale in [0.4]:# [0.3,0.4,0.5,0.7]: # [0.5,1,10,15]
 
                                         for prompt_idx in range(num_prompts):
+                                            if prompt_idx in [0,1,2,3,4,5,10,12,14,25,26,48,49]:# pt 
+                                                continue
                                             
                                             for target_idx in range(num_targets):
                                             
@@ -799,7 +900,7 @@ def create_function():
                                                     
                                                         for sampling in ['greedy']: # ['greedy', "multinomial"]:
                                                             
-                                                            for temp in [1000]:# [25000,30000,40000,50000,100000]:#[3000,16000,18000]:#[500,1000,2000,4000,5000,7000,10000,12000,15000,20000]:
+                                                            for temp in [3000]:# [25000,30000,40000,50000,100000]:#[3000,16000,18000]:#[500,1000,2000,4000,5000,7000,10000,12000,15000,20000]:
                                                                 if(sampling == "greedy"):
                                                                     temp = None
                                                                     
@@ -833,6 +934,7 @@ def create_function():
                                                                             
                                                                             curr_config.guidance.num_images_per_prompt = 10
                                                                             curr_config.guidance.num_gen_target_images_per_prompt = 10
+                                                                            curr_config.guidance.num_inference_steps = 100
                                                                             
                                                                             if num_samples in samples_schedules:
                                                                                 curr_config.guidance.samples_schedule = samples_schedules[num_samples]
@@ -1002,6 +1104,8 @@ def create_function():
                                                                         curr_config.guidance.guidance_method = guidance_method
                                                                         curr_config.guidance.guidance_blocksize = guidance_blocksize
                                                                         curr_config.guidance.percent_noise = percent_noise
+                                                                        curr_config.guidance.num_inference_steps = 100
+                                                                        curr_config.guidance.target_idxs = [target_idx]
                                                                         
                                                                         if num_samples in samples_schedules:
                                                                             curr_config.guidance.samples_schedule = samples_schedules[num_samples]
@@ -1148,8 +1252,8 @@ def create_function():
             
             elif method == 'i2i':
 
-                for percent_noise in [0.6, 0.7, 0.8]: # np.arange(0.5, 0.9, 0.1):
-                    for prompt_idx in range(num_prompts):
+                for percent_noise in [0.6]: # np.arange(0.5, 0.9, 0.1):
+                    for prompt_idx in [10,12,14,25,26,48,49]:
 
                         for target_idx in range(num_targets):
 
@@ -1162,6 +1266,34 @@ def create_function():
                             curr_config.guidance.target_idxs = [target_idx]
                             curr_config.guidance.prompt_idxs = [prompt_idx]
                             curr_config.guidance.percent_noise = float(round(percent_noise,1))
+                            curr_config.guidance.num_images_per_prompt = 10
+                            curr_config.guidance.num_gen_target_images_per_prompt = 10
+                            curr_config.guidance.num_inference_steps = 100
+
+                            filename = f'{method}_p{prompt_idx}_t{target_idx}_r{float(round(percent_noise,1))}_{scorer}'
+                            savepath = curr_path.joinpath(f'{filename}.yaml')
+                            OmegaConf.save(curr_config, savepath)
+                            
+            elif method == 'i2i2':
+
+                for percent_noise in [0.6]: # np.arange(0.5, 0.9, 0.1):
+                    for prompt_idx in range(6,10):
+
+                        for target_idx in range(num_targets):
+
+                            curr_config = copy.deepcopy(template)
+                            curr_config.project.seed = 2025
+                            curr_config.project.name = f'{method}_r{int(float(round(percent_noise,1))*10)}_{scorer}'
+                            curr_config.project.promptspath = _SCORERS[scorer]
+
+                            curr_config.guidance.method = method
+                            curr_config.guidance.scorer = scorer
+                            curr_config.guidance.target_idxs = [target_idx]
+                            curr_config.guidance.prompt_idxs = [prompt_idx]
+                            curr_config.guidance.percent_noise = float(round(percent_noise,1))
+                            curr_config.guidance.num_images_per_prompt = 10
+                            curr_config.guidance.num_gen_target_images_per_prompt = 10
+                            curr_config.guidance.num_inference_steps = 100
 
                             filename = f'{method}_p{prompt_idx}_t{target_idx}_r{float(round(percent_noise,1))}_{scorer}'
                             savepath = curr_path.joinpath(f'{filename}.yaml')
@@ -1408,17 +1540,20 @@ def create_function():
                 
             elif method in ['c_code']:
 
-                num_prompts = 3 if scorer == 'facedetector' else 4
+                # num_prompts = 3 if scorer == 'facedetector' else 4
                 num_targets = 3
+                # num_prompts = 6
 
                 for num_samples in [40]: # [10, 20, 30, 40]:
 
                     for block_size in [5]: # [5, 10, 20, 50, 100]
 
                         # pc = [0.6] if 'style' in scorer else [0.7]
-                        for percent_noise in [0.7,0.8]:
+                        for percent_noise in [0.6]:
                             # pt = [4,5] if 'style' in scorer else [3,4]
                             for prompt_idx in range(num_prompts):# pt 
+                                if prompt_idx in [0,1,2,3,4,5,10,12,14,25,26,48,49]:# pt 
+                                    continue
 
                                 for target_idx in range(num_targets):
 

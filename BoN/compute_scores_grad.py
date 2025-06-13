@@ -6,7 +6,7 @@ from PIL import Image
 from tqdm.auto import tqdm
 from pathlib import Path
 
-_SCORERS = ['pickscore'] # ['strokegen', 'facedetector', 'styletransfer'] 'strokegen', 'facedetector'
+_SCORERS = ['aesthetic'] # ['strokegen', 'facedetector', 'styletransfer'] 'strokegen', 'facedetector'
 
 _MAP_UG = {
     'styletransfer': {
@@ -38,7 +38,7 @@ def main():
     # _SCORERS = ['pickscore'] # ['strokegen', 'facedetector', 'styletransfer'] 'strokegen', 'facedetector'
     for scorer in _SCORERS:
 
-        scorer_path = outputs_path.joinpath(f'uncond_{scorer}')
+        scorer_path = outputs_path.joinpath(f'uncond2_{scorer}')
 
         uncond_rewards[scorer] = dict()
 
@@ -61,24 +61,33 @@ def main():
     perf = dict()
 
     # name_file = 'perf_ccode_b1'
-    name_file = 'ablations/table_2_pickscore'
+    name_file = 'ablations/table_2_aesthetic'
     if Path.exists(Path(f'{name_file}.json')):
         with open(f'{name_file}.json', 'r') as fp:
             perf = json.load(fp)      
     
     # table_2_aesthetic
     # d = [
-    #     'code_grad_final_generalvar4reviiiiii_multinomial_b5_gb5_temp1000_st6_et0_FreeDoM_aesthetic_gs2',
+    #     # 'code_grad_final_generalvar4reviiiiii_multinomial_b5_gb5_temp1000_st6_et0_FreeDoM_aesthetic_gs2',
     #     'mpgd_ddim100_tt1_rho75_reward_aesthetic',
-    #     'FreeDoM_aesthetic_rho2_aesthetic',
-    #     'ug_aesthetic_rho_30_cfg_50_w_6_aesthetic',
+    #     # 'FreeDoM_aesthetic_rho2_aesthetic',
+    #     # 'ug_aesthetic_30_aesthetic',
     # ]
     
     #table_2_pickscore
+    # d = [
+    #     # 'code_grad_final_generalvar4newi_greedy_b5_gb4_st10_et0_FreeDoM_pickscore_gs2',
+    #     # 'ug_pickscore_rho150_pickscore',
+    #     # 'mpgd_ddim100_tt1_rho75_reward_pickscore',
+    #     # 'FreeDoM_pickscore_rho20_pickscore'
+    # ]
+    
+    #table_2_aesthetic
     d = [
-        'code_grad_final_generalvar4newi_multinomial_b5_gb5_temp3000_st10_et0_FreeDoM_pickscore_gs2',
-        'mpgd_ddim100_tt1_rho75_reward_pickscore',
-        'FreeDoM_pickscore_rho15_pickscore'
+        # 'code_grad_final_generalvar4newi_greedy_b5_gb4_st10_et0_FreeDoM_pickscore_gs2',
+        'ug_aesthetic_rho30_aesthetic',
+        'mpgd_ddim100_tt1_rho75_reward_aesthetic',
+        'FreeDoM_aesthetic_rho2_aesthetic'
     ]
 
     source_dirs = [x for x in outputs_path.iterdir() if Path.is_dir(x) and x.stem in d]
@@ -156,7 +165,7 @@ def main():
 
                 try:
                     # uncond_path_p = outputs_path.joinpath(f'uncond_{scorer}').joinpath(target_key).joinpath(f'images/{prompt_dir.stem}')
-                    uncond_path_p = outputs_path.joinpath(f'uncond_{scorer}').joinpath(target_key).joinpath(f'{prompt_dir.stem}')
+                    uncond_path_p = outputs_path.joinpath(f'uncond2_{scorer}').joinpath(target_key).joinpath(f'{prompt_dir.stem}')
                     
                     if 'rho' in source_dir.stem:
                         if 'mpgd' in source_dir.stem:
@@ -166,7 +175,7 @@ def main():
                             uncond_path_p = outputs_path.joinpath(f'FreeDoM_{scorer}_rho0_{scorer}').joinpath(target_key).joinpath(f'{prompt_dir.stem}')
                             print(f"Fixed for {source_dir.stem}")
                         elif 'ug' in source_dir.stem:
-                            uncond_path_p = outputs_path.joinpath(f'ug_aesthetic_rho_0_cfg_50_w_6_{scorer}').joinpath(target_key).joinpath(f'{prompt_dir.stem}')
+                            uncond_path_p = outputs_path.joinpath(f'ug_{scorer}_rho0_{scorer}').joinpath(target_key).joinpath(f'{prompt_dir.stem}')
                             print(f"Fixed for {source_dir.stem}")
 
                     out = os.popen(f"python {root_path}/pytorch-fid/src/pytorch_fid/fid_score.py '{uncond_path_p.as_posix()}' '{prompt_dir.as_posix()}'").read()

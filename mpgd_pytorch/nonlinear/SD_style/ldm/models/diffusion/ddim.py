@@ -7,7 +7,10 @@ from functools import partial
 
 from ldm.modules.diffusionmodules.util import make_ddim_sampling_parameters, make_ddim_timesteps, noise_like, \
     extract_into_tensor
-
+    
+from ldm.models.diffusion.clip.base_clip import CLIPEncoder
+from ldm.models.diffusion.aesthetic.aesthetic_scorer import AestheticScorer
+from ldm.models.diffusion.pickscore.pickscore_scorer import PickScoreScorer
 from einops import rearrange
 from PIL import Image
 import os
@@ -92,6 +95,9 @@ class DDIMSampler(object):
                image_encoder=None,
                tt=1,
                rho=15,
+               start_ratio = 0.7,
+               end_ratio = 0.3,
+               prompt = None,
                **kwargs
                ):
         if conditioning is not None:
@@ -127,6 +133,9 @@ class DDIMSampler(object):
                                                     unconditional_conditioning=unconditional_conditioning,
                                                     tt=tt,
                                                     rho=rho,
+                                                    start_ratio = start_ratio, 
+                                                    end_ratio = end_ratio, 
+                                                    prompt = prompt
                                                     )
         return samples, intermediates
 
@@ -136,7 +145,7 @@ class DDIMSampler(object):
                       callback=None, timesteps=None, quantize_denoised=False,
                       mask=None, x0=None, img_callback=None, log_every_t=100,
                       temperature=1., noise_dropout=0., score_corrector=None, corrector_kwargs=None,
-                      unconditional_guidance_scale=1., unconditional_conditioning=None, tt=1, rho=15):
+                      unconditional_guidance_scale=1., unconditional_conditioning=None, tt=1, rho=15, start_ratio = 0.7, end_ratio = 0.3,prompt = None):
         device = self.model.betas.device
         b = shape[0]
         if x_T is None:
@@ -175,13 +184,12 @@ class DDIMSampler(object):
                                     noise_dropout=noise_dropout, score_corrector=score_corrector,
                                     corrector_kwargs=corrector_kwargs,
                                     unconditional_guidance_scale=unconditional_guidance_scale,
-                                    unconditional_conditioning=unconditional_conditioning, tt=tt, rho=rho)
+                                    unconditional_conditioning=unconditional_conditioning, tt=tt, rho=rho, start_ratio = start_ratio, end_ratio = end_ratio, prompt = prompt)
 
             img, pred_x0 = outs
 
             count1 += 1
             pred_x0_temp = self.model.decode_first_stage(pred_x0)
-            # just changing from [-1,1] tp [0,1]
             pred_x0_temp = torch.clamp((pred_x0_temp + 1.0) / 2.0, min=0.0, max=1.0)
             pred_x0_temp = pred_x0_temp.cpu().permute(0, 2, 3, 1).detach().numpy()
             pred_x0_torch = torch.from_numpy(pred_x0_temp).permute(0, 3, 1, 2)
@@ -190,7 +198,7 @@ class DDIMSampler(object):
                 count2 += 1
                 x_sample = 255. * rearrange(x_sample.cpu().numpy(), 'c h w -> h w c')
                 img_save = Image.fromarray(x_sample.astype(np.uint8))
-                # img_save.save(os.path.join("/workspace/stable-diffusion/intermediates", "{}_{}.png".format(count1, count2)))
+                # img_save.save(os.path.join(f"./workspace/stable-diffusion/intermediates", f"{count1}_{count2}.png"))
 
             if callback: callback(i)
             if img_callback: img_callback(pred_x0, i)
@@ -203,7 +211,8 @@ class DDIMSampler(object):
     @torch.no_grad()
     def p_sample_ddim_conditional_x0(self, x, c, t, index, repeat_noise=False, use_original_steps=False, quantize_denoised=False,
                       temperature=1., noise_dropout=0., score_corrector=None, corrector_kwargs=None,
-                      unconditional_guidance_scale=1., unconditional_conditioning=None, tt=1, rho=15):
+                      unconditional_guidance_scale=1., unconditional_conditioning=None, tt=1, rho=15,start_ratio = 0.7, end_ratio = 0.3, prompt = None):
+        # print(f"The conditioning is {c}")
         b, *_, device = *x.shape, x.device
 
         # x.requires_grad = True
@@ -218,8 +227,8 @@ class DDIMSampler(object):
             repeat = tt
         else:
             repeat = 1 
-        start = 0.7*self.total_steps
-        end = 0.3*self.total_steps
+        start = start_ratio*self.total_steps
+        end = end_ratio*self.total_steps
 
 
         for j in range(repeat):
@@ -258,18 +267,34 @@ class DDIMSampler(object):
                 pred_x0 = pred_x0.detach().requires_grad_(True)
             
                 if start > index >= end:
-                    # get the pixel space using the first stage decoder of the model
                     D_x0_t = self.model.decode_first_stage(pred_x0)
-                    # measures the similarity between the reference image (self.ref) and the D_x0_t
-                    residual = self.image_encoder.get_gram_matrix_residual(D_x0_t)
-                    # norm measures how clise they are 
-                    norm = torch.linalg.norm(residual)
-                    # this is the \nabla_{x_0} norm, thus measures where to move inorder to reduce the norm (loss),
+                    if isinstance(self.image_encoder,CLIPEncoder):
+                        # print("CLIP")
+                        residual = self.image_encoder.get_gram_matrix_residual(D_x0_t)
+                        # print(f"Shape of the residual is {residual.shape} and the residual is {residual}")
+                        norm = torch.linalg.norm(residual)
+                    elif isinstance(self.image_encoder,AestheticScorer):
+                        # print("Aesthetic")
+                        residual = self.image_encoder.loss_fn(D_x0_t)
+                        # print(f"Shape of the residual is {residual.shape} and the residual is {residual}")
+                        # print(f"the residual is {residual}")
+                        norm = -1*torch.linalg.norm(residual)
+                    elif isinstance(self.image_encoder,PickScoreScorer):
+                        # print("Aesthetic")
+                        residual = self.image_encoder.loss_fn(D_x0_t,prompt)
+                        # print(f"Shape of the residual is {residual.shape} and the residual is {residual}")
+                        # print(f"the residual is {residual}")
+                        norm = -1*torch.linalg.norm(residual)
+                    else:
+                        raise NotImplementedError("Image encoder not implemented")
+                    # print(f"The norm is {norm.item()} at t {t.item()} and index {index}")
                     norm_grad = torch.autograd.grad(outputs=norm, inputs=pred_x0)[0]
                     # in the implementatino for our paper we do have the "/ a_prev.sqrt()" part included, but we also found that in practice without it also lead to good results
                     # with and without "/ a_prev.sqrt()" may require different rho, but usually picking something between 15 to 30 is ok
-                    rho = (correction * correction).mean().sqrt().item() * unconditional_guidance_scale / (norm_grad * norm_grad).mean().sqrt().item() * rho # / a_prev.sqrt()
-
+                    # rho = (correction * correction).mean().sqrt().item() * unconditional_guidance_scale / (norm_grad * norm_grad).mean().sqrt().item() * rho # / a_prev.sqrt()
+                    rho = (correction * correction).mean().sqrt().item() * unconditional_guidance_scale / (norm_grad * norm_grad).mean().sqrt().item() * rho / a_prev.sqrt()
+                    # print(rho)
+                    
             if start > index >= end:
                 pred_x0 = pred_x0 - rho * norm_grad.detach()
             pred_x0 = pred_x0.detach()
@@ -282,6 +307,10 @@ class DDIMSampler(object):
             x_prev = x_prev.detach()
 
             x = beta_t.sqrt() * x_prev + (1 - beta_t).sqrt() * noise_like(x.shape, device, repeat_noise)
+            
+            # if(index == 0 and isinstance(self.image_encoder,AestheticScorer)):
+            #     D_x0_t = self.model.decode_first_stage(pred_x0)
+            #     print(f"Value of Aesthetic score is: {self.image_encoder.score(D_x0_t)}")
 
         return x_prev.detach(), pred_x0.detach()
 

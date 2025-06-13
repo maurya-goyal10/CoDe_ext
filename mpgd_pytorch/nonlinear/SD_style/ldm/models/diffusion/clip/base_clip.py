@@ -5,8 +5,6 @@ from .clip import clip
 import torchvision
 from PIL import Image
 
-# import clip
-
 model_name = "ViT-B/16"
 # model_name = "ViT-B/32"
 
@@ -29,12 +27,9 @@ def load_clip_to_cpu():
 
 
 class CLIPEncoder(nn.Module):
-    def __init__(self, need_ref=False, ref_path=None, alt_score=False):
+    def __init__(self, need_ref=False, ref_path=None):
         super().__init__()
-        self.alt_score = alt_score
         self.clip_model = load_clip_to_cpu()
-        # print('update')
-        # self.clip_model, _ = clip.load(model_name)
         self.clip_model.requires_grad = True
         self.preprocess = torchvision.transforms.Normalize(
             (0.48145466*2-1, 0.4578275*2-1, 0.40821073*2-1),
@@ -53,50 +48,25 @@ class CLIPEncoder(nn.Module):
             self.ref = img
     
     def calc_ref_feat(self, ref_path):
-        if not self.alt_score:
-            img = Image.open(ref_path).convert('RGB')
-            image = img.resize((224, 224), Image.Resampling.BILINEAR)
-            img = self.to_tensor(image)
-            img = torch.unsqueeze(img, 0)
-            img = img.cuda()
-            self.ref = img
-        else:
-            img = Image.open(ref_path).convert('RGB')
-            img = self.to_tensor(img)
-            img = torch.unsqueeze(img, 0)
-            img = img.cuda()
-
-            img = (img + 1) * 0.5
-            img = torch.nn.functional.interpolate(img, size=(224, 224), mode='bicubic')
-            img = self.preprocess(img)
-            image_features = self.clip_model.encode_image(img)
-            image_features = image_features / image_features.norm(dim=1, keepdim=True)
-            self.ref = image_features
-
+        img = Image.open(ref_path).convert('RGB')
+        image = img.resize((224, 224), Image.Resampling.BILINEAR)
+        img = self.to_tensor(image)
+        img = torch.unsqueeze(img, 0)
+        img = img.cuda()
+        self.ref = img
+    
     def get_gram_matrix_residual(self, im1):
+        im1 = torch.nn.functional.interpolate(im1, size=(224, 224), mode='bicubic')
+        im1 = self.preprocess(im1)
 
-        if not self.alt_score:
-            im1 = torch.nn.functional.interpolate(im1, size=(224, 224), mode='bicubic')
-            im1 = self.preprocess(im1)
-
-            f1, feats1 = self.clip_model.encode_image_with_features(im1)
-            f2, feats2 = self.clip_model.encode_image_with_features(self.ref)
-            
-            feat1 = feats1[2][1:, 0, :]
-            feat2 = feats2[2][1:, 0, :]
-            gram1 = torch.mm(feat1.t(), feat1)
-            gram2 = torch.mm(feat2.t(), feat2)
-            return gram1 - gram2
-
-        else:
-            im1 = (im1 + 1) * 0.5
-            im1 = torch.nn.functional.interpolate(im1, size=(224, 224), mode='bicubic')
-            im1 = self.preprocess(im1)
-
-            image_features = self.clip_model.encode_image(im1)
-            image_features = image_features / image_features.norm(dim=1, keepdim=True)
-            logits_per_image = 100 * image_features @ self.ref.t()
-            return -1 * logits_per_image
+        f1, feats1 = self.clip_model.encode_image_with_features(im1)
+        f2, feats2 = self.clip_model.encode_image_with_features(self.ref)
+        
+        feat1 = feats1[2][1:, 0, :]
+        feat2 = feats2[2][1:, 0, :]
+        gram1 = torch.mm(feat1.t(), feat1)
+        gram2 = torch.mm(feat2.t(), feat2)
+        return gram1 - gram2
     
     def get_clip_score(self, image, text):
         return self.clip_model(image, text)

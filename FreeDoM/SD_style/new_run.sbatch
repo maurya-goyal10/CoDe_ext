@@ -47,7 +47,7 @@ nvidia-smi
 
 # cd ../../src_sd
 
-python txt2img.py --prompt "snail" "hippopotamus" "cheetah" "crocodile" "lobster" "octopus" --ddim_steps 100 --n_iter 10 --seed 2025 --H 512 --W 512 --rho 0
+python txt2img.py --prompt "snail" "hippopotamus" "cheetah" "crocodile" "lobster" "octopus" --ddim_steps 100 --n_iter 10 --seed 2024 --H 512 --W 512 --rho 0.2 --weight1 1 --weight2 1
 
 echo -n "This run completed on: "
 date

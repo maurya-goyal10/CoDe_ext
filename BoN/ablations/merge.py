@@ -23,7 +23,7 @@ def merge_json_dicts(file1, file2, output_filename="combined_output.json"):
     print(f"Merged JSON written to '{output_filename}'")
 
 if __name__ == "__main__":
-    filename1 = "multireward_code4.json"
-    filename2_clip = "multireward_code4_clip.json"
-    storing_name = "ablations_final/multireward_code4_final.json"
+    filename1 = "table_1_compress.json"
+    filename2_clip = "table_1_compress_clip.json"
+    storing_name = "ablations_final/table_1_compress_final.json"
     merge_json_dicts(file1=filename1,file2=filename2_clip,output_filename=storing_name)

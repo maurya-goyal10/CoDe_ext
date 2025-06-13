@@ -2,7 +2,7 @@
 #
 
 for FILE in *.sbatch; do
-    if [[ "${FILE}" == *"pytorch"* ]]; then
+    if [[ "${FILE}" == *"pickscore"* ]]; then
         echo "Not submitting template."
     else
         echo ${FILE}

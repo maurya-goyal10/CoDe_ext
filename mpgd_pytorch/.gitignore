@@ -8,6 +8,8 @@ linear_inv/scripts_backup*
 *exp*
 *.pt
 nonlinear/SD_style/outputs*
+nonlinear/SD_style/models/ldm/stable-diffusion-v1/*
+nonlinear/SD_style/style_images_2
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
